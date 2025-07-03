@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import LCD from '@/app/components/LCD';
 
 export default function NTPClient() {
   const [serverTime, setServerTime] = useState<Date | null>(null);
@@ -42,17 +43,22 @@ export default function NTPClient() {
 
   return (
     <div className="py-6 text-center">
-      <div className="font-mono text-4xl tracking-widest text-stone-900">
-        {serverTime.toLocaleTimeString()}
-      </div>
-      <div className="mt-1 text-lg text-stone-700">
-        {serverTime.toLocaleDateString(undefined, {
-          weekday: 'long',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-        })}
-      </div>
+      <LCD
+        lines={[
+          {
+            cursor: { y: 0, x: 4 },
+            text: serverTime.toLocaleTimeString(undefined, { hour12: false }),
+          },
+          {
+            cursor: { y: 1, x: 3 },
+            text: serverTime.toLocaleDateString('en-GB', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            }),
+          },
+        ]}
+      />
     </div>
   );
 }

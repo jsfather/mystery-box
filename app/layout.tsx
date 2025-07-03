@@ -1,4 +1,5 @@
 import '@/app/globals.css';
+import { jersey10 } from '@/app/fonts';
 
 export default function RootLayout({
   children,
@@ -7,7 +8,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`antialiased`}>{children}</body>
+      <body className={`${jersey10.variable} antialiased`}>{children}</body>
     </html>
   );
 }
