@@ -51,7 +51,7 @@ export default function NTPClient() {
           },
           {
             cursor: { y: 1, x: 3 },
-            text: serverTime.toLocaleDateString(undefined, {
+            text: serverTime.toLocaleDateString('en-GB', {
               day: '2-digit',
               month: '2-digit',
               year: 'numeric',
