@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { Settings2, TriangleAlert } from "lucide-react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Settings2, TriangleAlert, Sun, Moon, Monitor } from "lucide-react";
 import type { Snapshot } from "../../shared/model";
 import { api, type SaveSettings } from "./api";
 declare global {
@@ -8,24 +8,50 @@ declare global {
     mbGetTheme: () => string;
   }
 }
-export function ThemeSelect() {
+export function useAppearance() {
   const [theme, setTheme] = useState(() => window.mbGetTheme?.() ?? "system");
   useEffect(() => {
     const update = () => setTheme(window.mbGetTheme());
     window.addEventListener("mb-theme", update);
     return () => window.removeEventListener("mb-theme", update);
   }, []);
+  return theme;
+}
+export function ThemeControl({ expanded = false }: { expanded?: boolean }) {
+  const group = useId();
+  const theme = useAppearance();
   return (
-    <select
-      aria-label="Application theme"
-      className="theme-select"
-      value={theme}
-      onChange={(e) => window.mbSetTheme(e.target.value)}
-    >
-      <option value="system">Device theme</option>
-      <option value="light">Light theme</option>
-      <option value="dark">Dark theme</option>
-    </select>
+    <fieldset className={`theme-control${expanded ? " expanded" : ""}`}>
+      <legend className="visually-hidden">Application appearance</legend>
+      {(
+        [
+          ["light", "Light", Sun],
+          ["dark", "Dark", Moon],
+          ["system", "System", Monitor],
+        ] as const
+      ).map(([value, label, Icon]) => (
+        <label
+          className="theme-choice"
+          key={value}
+          title={
+            value === "system" ? "Follow your device’s appearance" : `${label} appearance`
+          }
+        >
+          <input
+            type="radio"
+            name={group}
+            value={value}
+            checked={theme === value}
+            aria-label={`${label} theme`}
+            onChange={() => window.mbSetTheme(value)}
+          />
+          <span>
+            <Icon size={17} aria-hidden="true" />
+            {expanded && <span>{label}</span>}
+          </span>
+        </label>
+      ))}
+    </fieldset>
   );
 }
 export function Preferences({
@@ -112,7 +138,7 @@ export function Preferences({
         </button>
         <div className="appearance-setting">
           <label>Application appearance</label>
-          <ThemeSelect />
+          <ThemeControl expanded />
           <p className="input-note">
             Device theme follows your phone or computer automatically. This preference
             belongs to this browser.

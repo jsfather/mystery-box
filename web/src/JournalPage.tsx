@@ -1,13 +1,8 @@
-import { useCallback, useEffect, useState, useRef } from "react";
-import {
-  MessageSquare,
-  RefreshCcw,
-  Search,
-  ChevronDown,
-  Heart,
-  NotebookPen,
-} from "lucide-react";
+import { Fragment, useCallback, useEffect, useState, useRef } from "react";
+import { MessageSquare, RefreshCcw, ChevronDown, Heart, NotebookPen } from "lucide-react";
 import type { Snapshot, Message, ActivityEntry, User } from "../../shared/model";
+import { ConversationMessage } from "./ConversationMessage";
+import { MessageSearch } from "./MessageSearch";
 import { MessageComposer } from "./MessageComposer";
 import { api } from "./api";
 export function MessageHistory({
@@ -30,6 +25,14 @@ export function MessageHistory({
     nearBottom = useRef(true),
     initialized = useRef(false),
     activeSearch = useRef(search);
+  const openedAt = useRef(snapshot.serverTime),
+    seen = useRef(new Set<string>());
+  const [arriving, setArriving] = useState(new Set<string>());
+  useEffect(() => {
+    if (!arriving.size) return;
+    const timer = setTimeout(() => setArriving(new Set()), 600);
+    return () => clearTimeout(timer);
+  }, [arriving]);
   const signature = snapshot.messages.map((m) => m.id + Number(m.cancelled)).join(",");
   const scrollBottom = useCallback(() => {
     const box = conversation.current;
@@ -49,6 +52,7 @@ export function MessageHistory({
           `messages?q=${encodeURIComponent(search)}${before ? `&before=${before}` : ""}`,
         );
         if (request !== requestId.current) return;
+        for (const message of result.items) seen.current.add(message.id);
         setItems((old) =>
           before
             ? [...result.items, ...old].filter(
@@ -85,6 +89,11 @@ export function MessageHistory({
     const matches = snapshot.messages.filter((m) =>
       m.text.toLowerCase().includes(search.toLowerCase()),
     );
+    const fresh = matches.filter(
+      (m) => !seen.current.has(m.id) && m.createdAt >= openedAt.current,
+    );
+    for (const message of matches) seen.current.add(message.id);
+    if (fresh.length) setArriving((old) => new Set([...old, ...fresh.map((m) => m.id)]));
     setItems((old) => {
       const merged = new Map(old.map((m) => [m.id, m]));
       for (const m of matches) merged.set(m.id, m);
@@ -97,6 +106,18 @@ export function MessageHistory({
     timeZone: snapshot.settings.timezone,
     dateStyle: "medium",
     timeStyle: "short",
+  });
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: snapshot.settings.timezone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: snapshot.settings.hour12,
+  });
+  const day = new Intl.DateTimeFormat("en-GB", {
+    timeZone: snapshot.settings.timezone,
+    day: "numeric",
+    month: "long",
+    year: "numeric",
   });
   const ordered = [...items].sort(
     (a, b) => (a.cursor ?? a.createdAt) - (b.cursor ?? b.createdAt),
@@ -113,22 +134,14 @@ export function MessageHistory({
         </div>
         <Heart size={22} />
       </div>
-      <label className="search-box">
-        <Search size={17} />
-        <input
-          aria-label="Search message history"
-          placeholder="Find something we said…"
-          maxLength={160}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      </label>
+      <MessageSearch value={search} onChange={setSearch} />
       {error && (
         <p role="alert" className="error">
           {error}
         </p>
       )}
       <div
+        id="conversation-messages"
         className="conversation"
         ref={conversation}
         role="region"
@@ -161,63 +174,43 @@ export function MessageHistory({
             <p>Your messages appear here with who sent them.</p>
           </div>
         )}
-        {ordered.map((message) => {
-          const own = message.authorId === me.id;
-          const status = message.cancelled
-            ? "LCD display cancelled"
-            : message.expiresAt <= snapshot.serverTime
-              ? "Saved · display window ended"
-              : message.startsAt > snapshot.serverTime
-                ? "Queued for our box"
-                : "Display window active";
+        {ordered.map((message, index) => {
+          const previous = ordered[index - 1],
+            date = day.format(message.createdAt);
+          const newDay = !previous || day.format(previous.createdAt) !== date;
+          const grouped =
+            !newDay &&
+            (previous.authorId ?? previous.authorName) ===
+              (message.authorId ?? message.authorName) &&
+            message.createdAt - previous.createdAt >= 0 &&
+            message.createdAt - previous.createdAt <= 300000;
           return (
-            <article
-              key={message.id}
-              className={`chat-message ${own ? "own" : "partner"}`}
-            >
-              <div className="chat-avatar" aria-hidden="true">
-                {(message.authorName ?? "Us").slice(0, 1)}
-              </div>
-              <div className="chat-content">
-                <div className="chat-meta">
-                  <strong>
-                    {message.authorName ?? "Before accounts"}
-                    {own ? " · You" : ""}
-                  </strong>
-                  <time dateTime={new Date(message.createdAt).toISOString()}>
-                    {formatter.format(message.createdAt)}
-                  </time>
+            <Fragment key={message.id}>
+              {newDay && (
+                <div className="chat-day">
+                  <span>{date === day.format(snapshot.serverTime) ? "Today" : date}</span>
                 </div>
-                <p className="chat-bubble">{message.text}</p>
-                <div className="chat-delivery">
-                  <span>{status}</span>
-                  <div>
-                    {!message.cancelled && message.expiresAt > snapshot.serverTime && (
-                      <button
-                        aria-label="Cancel LCD display"
-                        onClick={() =>
-                          api(`messages/${message.id}`, "DELETE").catch((e) =>
-                            setError(e.message),
-                          )
-                        }
-                      >
-                        Cancel display
-                      </button>
-                    )}
-                    <button
-                      aria-label={`Show message again: ${message.text}`}
-                      onClick={() =>
-                        api(`messages/${message.id}/replay`, "POST")
-                          .then(() => notice("Message queued for the box again"))
-                          .catch((e) => setError(e.message))
-                      }
-                    >
-                      Show again
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </article>
+              )}
+              <ConversationMessage
+                message={message}
+                own={message.authorId === me.id}
+                grouped={grouped}
+                animate={arriving.has(message.id)}
+                now={snapshot.serverTime}
+                time={time.format(message.createdAt)}
+                timestamp={formatter.format(message.createdAt)}
+                onCancel={() =>
+                  api(`messages/${message.id}`, "DELETE").catch((e) =>
+                    setError(e.message),
+                  )
+                }
+                onReplay={() =>
+                  api(`messages/${message.id}/replay`, "POST")
+                    .then(() => notice("Message queued for the box again"))
+                    .catch((e) => setError(e.message))
+                }
+              />
+            </Fragment>
           );
         })}
       </div>
@@ -232,6 +225,8 @@ export function MessageHistory({
           defaultDuration={snapshot.settings.messaging.defaultDuration}
           onSend={async (text, duration) => {
             const saved = await api("messages", "POST", { text, duration });
+            seen.current.add(saved.id);
+            setArriving((old) => new Set([...old, saved.id]));
             if (search) setSearch("");
             else setItems((old) => [...old.filter((m) => m.id !== saved.id), saved]);
             requestAnimationFrame(scrollBottom);
@@ -239,10 +234,13 @@ export function MessageHistory({
           }}
         />
       </div>
-      <p className="quiet-note">
-        The conversation stays here after a message leaves the LCD. Display windows can
-        expire while the box is offline; an active window does not confirm it was seen.
-      </p>
+      <details className="chat-help">
+        <summary>About messages on our box</summary>
+        <p>
+          The conversation stays here after a message leaves the LCD. Display windows can
+          expire while the box is offline; an active window does not confirm it was seen.
+        </p>
+      </details>
     </section>
   );
 }

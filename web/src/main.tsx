@@ -51,7 +51,8 @@ import "./style.css";
 import "./love.css";
 import "./theme.css";
 import { TimezoneSelect } from "./TimezoneSelect";
-import { Preferences, ThemeSelect } from "./Preferences";
+import { HeaderConnection, MobileThemeButton } from "./HeaderControls";
+import { Preferences, ThemeControl } from "./Preferences";
 type Page =
   | "overview"
   | "clock"
@@ -140,11 +141,17 @@ function App() {
   }, [auth]);
   useEffect(() => {
     window.scrollTo(0, 0);
-    if (window.matchMedia("(max-width: 640px)").matches)
-      document
-        .querySelector('nav [aria-current="page"]')
-        ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [page]);
+    const mobile = window.matchMedia("(max-width: 640px)");
+    const revealCurrentPage = () => {
+      if (mobile.matches)
+        document
+          .querySelector('nav [aria-current="page"]')
+          ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    };
+    revealCurrentPage();
+    mobile.addEventListener("change", revealCurrentPage);
+    return () => mobile.removeEventListener("change", revealCurrentPage);
+  }, [page, auth]);
   function notice(text: string) {
     setToast(text);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -249,16 +256,40 @@ function App() {
               </>
             )}
           </button>
-          <ThemeSelect />
+          <ThemeControl expanded />
           <small>Just you, me, and all the seconds in between.</small>
         </form>
       </div>
     );
+  function signOut() {
+    api("logout", "POST")
+      .then(() => {
+        setAuth(false);
+        setMe(null);
+        setSnapshot(null);
+      })
+      .catch((e) => notice(e.message));
+  }
   const s = snapshot;
   return (
     <div className="shell">
       <aside className="sidebar">
-        <Brand />
+        <div className="sidebar-header">
+          <Brand />
+          <div className="mobile-header-actions">
+            <MobileThemeButton />
+            <HeaderConnection live={live} />
+            <button
+              type="button"
+              className="mobile-signout"
+              aria-label="Sign out"
+              title="Sign out"
+              onClick={signOut}
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+        </div>
         <div className="workspace">
           <span className="workspace-icon">
             <Box size={20} />
@@ -330,9 +361,8 @@ function App() {
             <strong>{pageInfo[page][0]}</strong>
           </div>
           <div className="top-status">
-            <ThemeSelect />
-            <span className={"status-dot " + (live ? "" : "muted")} />
-            {live ? "Live connection" : "Reconnecting…"}
+            <ThemeControl />
+            <HeaderConnection live={live} />
             <span className="avatar" title={me?.name}>
               {me?.name.slice(0, 1) ?? "♥"}
             </span>
