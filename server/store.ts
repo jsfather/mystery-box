@@ -26,7 +26,8 @@ export class Store {
    CREATE INDEX IF NOT EXISTS sessions_expiry ON sessions(expiresAt);
    CREATE TABLE IF NOT EXISTS activity(id INTEGER PRIMARY KEY AUTOINCREMENT,createdAt INTEGER NOT NULL,actorId TEXT,actorName TEXT NOT NULL,action TEXT NOT NULL,details TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value INTEGER NOT NULL);
-   INSERT OR IGNORE INTO metadata VALUES('settingsRevision',0);`);
+   INSERT OR IGNORE INTO metadata VALUES('settingsRevision',0);
+   INSERT OR IGNORE INTO metadata VALUES('resetRevision',0);`);
     const columns = this.db
       .prepare("PRAGMA table_info(messages)")
       .all()
@@ -69,6 +70,12 @@ export class Store {
         .value,
     );
   }
+  resetRevision(): number {
+    return Number(
+      this.db.prepare("SELECT value FROM metadata WHERE key='resetRevision'").get()!
+        .value,
+    );
+  }
   saveSettings(settings: Settings, actor?: User, expected?: number) {
     return this.atomic(() => {
       if (expected !== undefined && expected !== this.revision())
@@ -89,6 +96,22 @@ export class Store {
           ),
         });
       return this.revision();
+    });
+  }
+  factoryReset(actor: User, eraseHistory: boolean) {
+    this.atomic(() => {
+      this.db
+        .prepare("UPDATE settings SET body=? WHERE id=1")
+        .run(JSON.stringify(defaults));
+      this.db.exec("UPDATE metadata SET value=value+1 WHERE key='settingsRevision'");
+      if (eraseHistory) this.db.exec("DELETE FROM messages; DELETE FROM activity;");
+      else
+        this.db.exec(
+          "UPDATE messages SET cancelled=1 WHERE cancelled=0 AND expiresAt > " +
+            Date.now(),
+        );
+      this.db.exec("UPDATE metadata SET value=value+1 WHERE key='resetRevision'");
+      this.audit(actor, "factory.reset", { eraseHistory });
     });
   }
   mapMessages(rows: unknown[]): Message[] {

@@ -30,6 +30,7 @@ int32_t utcOffset = 0, cachedDateKey = 0;
 bool synced = false, lcdReady = false, lightOn = true;
 bool hour12 = false, showSeconds = true, loveEnabled = false;
 uint32_t loveSince = 0;
+uint8_t loveFormat = 0;
 char loveTitle[17] = "YOU & ME <3";
 char displayed[2][17] = {{0}, {0}}, cachedDate[17] = "Waiting for time";
 uint8_t pixels[8][12] = {{0}};
@@ -111,6 +112,8 @@ void received(char* topic, byte* payload, unsigned int length) {
   }
   loveEnabled = (doc["loveEnabled"] | false) && doc["loveSince"].is<uint32_t>();
   loveSince = doc["loveSince"] | 0UL;
+  loveFormat = doc["loveFormat"] | 0;
+  if (loveFormat > 5) loveFormat = 0;
   if (loveSince > epoch) loveEnabled = false;
   strncpy(loveTitle, title, 16);
   loveTitle[16] = '\0';
@@ -165,11 +168,25 @@ void offlineClock() {
     const size_t n = strlen(loveTitle);
     memcpy(dedication + (16 - n) / 2, loveTitle, n);
     dedication[15] = '*';
-    snprintf(counter, sizeof(counter), "%lud %02u:%02u:%02u",
-      (unsigned long)(elapsed / 86400UL),
-      (unsigned int)((elapsed / 3600UL) % 24),
-      (unsigned int)((elapsed / 60UL) % 60),
-      (unsigned int)(elapsed % 60));
+    uint8_t format = loveFormat;
+    if (format == 5) {
+      const uint8_t formats[] = {0, 1, 3, 4};
+      format = formats[(utc / 10) % 4];
+    }
+    const unsigned long days = elapsed / 86400UL;
+    const unsigned int h = (elapsed / 3600UL) % 24;
+    const unsigned int m = (elapsed / 60UL) % 60;
+    const unsigned int sec = elapsed % 60;
+    switch (format) {
+      case 1:
+        if (elapsed <= 99999999UL) snprintf(counter, sizeof(counter), "%lu seconds", (unsigned long)elapsed);
+        else snprintf(counter, sizeof(counter), "%lus", (unsigned long)elapsed);
+        break;
+      case 2: snprintf(counter, sizeof(counter), "%lu days of us", days); break;
+      case 3: snprintf(counter, sizeof(counter), "%luw %lud %02u:%02u", days / 7, days % 7, h, m); break;
+      case 4: snprintf(counter, sizeof(counter), "%luh %02um %02us", (unsigned long)(elapsed / 3600UL), m, sec); break;
+      default: snprintf(counter, sizeof(counter), "%lud %02u:%02u:%02u", days, h, m, sec); break;
+    }
     row(0, dedication);
     centered(1, counter);
     return;

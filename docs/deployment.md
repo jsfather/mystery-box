@@ -1,18 +1,27 @@
-# Deploy on Dokploy
+# Deploy on Dokploy — automatic certificates
 
-The deployment has two services: `app` (dashboard/API, port 3000) and `broker` (Mosquitto). SQLite lives in a named `app-data` volume. MQTT port 1883 is internal; internet devices use TLS on 8883.
+Dokploy’s existing Traefik proxy issues and renews certificates for both connections:
 
-## 1. Create a Compose project
+| Purpose | Hostname | Public connection | Internal destination |
+| --- | --- | --- | --- |
+| Dashboard / iPhone PWA | `clock.example.com` | HTTPS, port 443 | `app:3000` |
+| Arduino | `mqtt.example.com` | MQTT over TLS, port 443 | `broker:1883` |
 
-Connect this Git repository to a new **Docker Compose** service in Dokploy. Use `compose.yaml` together with `compose.tls.yaml`. If your Dokploy version accepts only one Compose path, generate the combined file locally and paste it into Dokploy’s Compose editor:
+Use **two different hostnames**, pointing to the same server. Traefik uses the hostname in the TLS handshake (SNI) to select the MQTT TCP router; other domains continue through the normal HTTPS routers. The Arduino keeps native MQTT. It does not need WebSockets or extra networking libraries.
 
-```sh
-docker compose -f compose.yaml -f compose.tls.yaml config --no-interpolate
+There is **no `MQTT_CERT_DIR`, certificate folder, private-key mount, renewal hook, or public port 8883** in this deployment. Certificate storage and renewal belong to Dokploy’s Traefik, just like your other HTTPS projects. The MQTT router explicitly uses that same certificate resolver.
+
+## 1. Select the Compose file
+
+Connect this Git repository to a **Docker Compose** service in Dokploy and set its Compose path to:
+
+```text
+compose.dokploy.yaml
 ```
 
-Do not commit the rendered configuration with interpolated secrets. The repository’s `broker/start.sh` must be present in the checkout; the base Compose file bind-mounts it.
+This is a complete deployment entry point. It inherits the shared services from `compose.yaml`, attaches the broker to Dokploy’s proxy network, and supplies the MQTT TLS routing labels. Keep both files and `broker/start.sh` in the Git checkout. Use Docker Compose, not Docker Stack/Swarm mode (`extends` is a Compose feature).
 
-Configure environment variables in Dokploy:
+Set these environment variables in Dokploy:
 
 ```dotenv
 ADMIN_USERNAME=husband
@@ -25,53 +34,66 @@ MQTT_SERVER_PASSWORD=<different-random-password-at-least-16-characters>
 MQTT_DEVICE_PASSWORD=<different-random-password-at-least-16-characters>
 DEVICE_ID=uno-r4
 APP_ORIGIN=https://clock.example.com
-MQTT_CERT_DIR=/opt/mystery-box/certs
+MQTT_DOMAIN=mqtt.example.com
 ```
 
-Account variables initialize an empty database only; existing accounts are managed from **You & me**. Both accounts have equal owner access. `PARTNER_PASSWORD` may be omitted to create her account in the UI instead. See [the shared setup guide](our-story.md).
+Account variables initialize an empty database only; existing accounts are managed from **You & me**. `PARTNER_PASSWORD` may be omitted if you want to create her account from the UI. See [the shared setup guide](our-story.md).
 
-Generate each password separately with `openssl rand -hex 24`. Use the device password only in the firmware. Keep the server password on the server. The app deliberately refuses an insecure production origin/cookie configuration.
+Generate each password separately with `openssl rand -hex 24`. The device uses only the device password. The server account password stays on the server. Do not paste rendered Compose output containing interpolated secrets into a public issue or commit.
+
+If you previously used the manual-certificate configuration, switch from `compose.yaml` + `compose.tls.yaml` to **`compose.dokploy.yaml`**, remove `MQTT_CERT_DIR`, add `MQTT_DOMAIN`, and update the firmware port from 8883 to 443. Keep the same Dokploy project and its `app-data` volume to preserve accounts, notes and settings. The old manual-certificate override has been removed.
 
 ## 2. Dashboard domain
 
-Point `clock.example.com` at your server. In Dokploy **Domains**, add the domain to service **app**, container port **3000**, enable HTTPS and redirect HTTP to HTTPS. The application listens on `0.0.0.0`. It does not need a host-published HTTP port. Do not route the domain to the broker.
+Point `clock.example.com` at the server. In Dokploy **Domains**, add:
 
-`APP_ORIGIN` must exactly match the browser origin, with scheme and without a trailing slash. One trusted proxy hop is configured for Dokploy. If you add more proxies, review `TRUST_PROXY` rather than trusting arbitrary forwarded headers. Keep `/api/events` unbuffered: the app sends `X-Accel-Buffering: no`. The browser and API share the same origin.
+- Host: `clock.example.com`
+- Service: **app**
+- Container port: **3000**
+- HTTPS / Let’s Encrypt: enabled
+- HTTP → HTTPS redirect: enabled
 
-## 3. MQTT TLS endpoint
+`APP_ORIGIN` must match the browser origin exactly, with scheme and without a trailing slash. One trusted proxy hop is configured for Dokploy. Keep `/api/events` unbuffered; the server sends `X-Accel-Buffering: no`. No application HTTP host port needs publishing.
 
-Point `mqtt.example.com` at the same server. Permit **TCP 8883** in your firewall. An HTTP domain rule in Dokploy does **not** automatically configure a native MQTT TLS endpoint or provide certificates to Mosquitto. The override publishes 8883 directly and Mosquitto terminates TLS.
+## 3. MQTT domain — managed automatically
 
-Provision a certificate for **mqtt.example.com** with your existing ACME/certificate tooling. A DNS-01 challenge avoids conflicts with Dokploy’s HTTP proxy. Put these files in `MQTT_CERT_DIR` on the Docker host:
+Create the DNS record `mqtt.example.com` pointing to the same server. Set `MQTT_DOMAIN=mqtt.example.com` in Dokploy and deploy. **Do not add this hostname to Dokploy’s HTTP Domains tab.** Its TCP router and certificate request are already defined by the Compose labels.
 
-```text
-/opt/mystery-box/certs/fullchain.pem
-/opt/mystery-box/certs/privkey.pem
+The configuration uses stock Dokploy defaults:
+
+```dotenv
+DOKPLOY_NETWORK=dokploy-network
+TRAEFIK_HTTPS_ENTRYPOINT=websecure
+TRAEFIK_CERT_RESOLVER=letsencrypt
+MQTT_ROUTER_NAME=mystery-box-mqtt
 ```
 
-Mount real files, not symlinks whose targets lie outside the mounted directory. Grant the Mosquitto container user (UID/GID **1883** in the selected image) read permission on the key and certificate and traversal permission on directories. For example, a root-owned directory group-readable by GID 1883 with mode 750 and a key mode 640. Do not make the private key world-readable. The broker exits with a clear error if certificates cannot be read.
+You normally do not need to set these. If your Dokploy proxy was customized, use its actual network, entrypoint and resolver names. If you deploy multiple copies behind one proxy, give each its own `MQTT_ROUTER_NAME` and MQTT hostname. Dokploy’s existing Traefik instance must be running; this project does not create a second proxy or certificate issuer.
 
-Renew the certificate before expiry, copy renewed files atomically into this directory with the correct ownership, then restart/redeploy the **broker** so it reloads them. Configure a renewal hook in your certificate manager. The included Compose setup consumes certificates; it does not issue or renew them.
+Traefik terminates MQTT TLS on its existing TCP port **443** and forwards the decrypted MQTT stream to the private broker on port 1883. The broker retains password authentication and topic ACLs. Do not publish 1883 or add a host mapping for 443 to the app/broker; Traefik already owns the public port.
 
-Firmware settings:
+Public DNS and your existing ACME challenge path must work, just as for other Dokploy domains. With stock HTTP-01 validation, ports 80 and 443 must reach Dokploy. If using Cloudflare DNS, make the **MQTT hostname DNS-only (grey cloud)**: its ordinary HTTP proxy does not carry native MQTT. The dashboard may use your normal HTTP proxy setup. A dedicated non-HTTP proxy such as Spectrum would require separate configuration.
+
+Firmware configuration:
 
 ```cpp
 #define MQTT_HOST "mqtt.example.com"
-#define MQTT_PORT 8883
+#define MQTT_PORT 443
 #define MQTT_TLS 1
 #define MQTT_USERNAME "device"
 #define MQTT_PASSWORD "your-device-password"
+#define MQTT_ROOT_CA ""
 ```
 
-Use a public CA supported by the updated WiFiS3 connectivity firmware, or put your private root CA PEM in `MQTT_ROOT_CA`. The broker’s full chain must match the configured DNS hostname. Never expose port 1883 publicly.
+Use the **hostname**, not a server IP, because TLS routing and certificate verification depend on it. Update the UNO R4 WiFi connectivity firmware so its CA trust bundle recognizes your public CA. Leaving `MQTT_ROOT_CA` empty uses the modem’s default trust bundle; this is independent of Dokploy managing the server certificate. Do not disable certificate verification.
 
-Optional TLS diagnostic on your own machine:
+The MQTT hostname is a native MQTT endpoint, not a webpage. For a TLS diagnostic:
 
 ```sh
-openssl s_client -connect mqtt.example.com:8883 -servername mqtt.example.com -verify_return_error </dev/null
+openssl s_client -connect mqtt.example.com:443 -servername mqtt.example.com -verify_return_error </dev/null
 ```
 
-Keep the host time synchronized (e.g. chrony/systemd-timesyncd); the server’s system clock is the time authority.
+For the simulator, set `SIMULATOR_MQTT_URL=mqtts://mqtt.example.com:443`. Keep the host’s system time synchronized with NTP.
 
 ## 4. Verify
 
@@ -94,10 +116,16 @@ Deploy one app replica. Rolling two replicas simultaneously would create competi
 
 Rotate credentials by updating Dokploy environment variables, redeploying the broker/app, and updating the device secrets and sketch. Rotating only the device credential does not require changing the administrator password.
 
+## Validation
+
+The production build and 30 automated tests pass. Deployment checks resolve the Dokploy Compose file and verify the TCP routing labels, certificate resolver, private ports and configurable proxy names. An isolated Traefik test also verified dashboard HTTPS and native MQTT TLS on the same listener, including strict certificate verification and MQTT password rejection. That local test used disposable certificates; live Let’s Encrypt issuance requires your real DNS and Dokploy server and was not performed here.
+
 ## References
 
-- [Dokploy Compose domains and Traefik](https://docs.dokploy.com/docs/core/troubleshooting/domains)
-- [Dokploy domain configuration](https://docs.dokploy.com/docs/core/domains)
-- [Mosquitto configuration: TLS, passwords and topic ACLs](https://mosquitto.org/man/mosquitto-conf-5.html)
+- [Dokploy Compose domain management](https://docs.dokploy.com/docs/core/docker-compose/domains)
+- [Dokploy’s default network, entrypoint and certificate resolver](https://docs.dokploy.com/docs/core/docker-compose/example)
+- [Traefik TCP TLS termination and automatic ACME certificates](https://doc.traefik.io/traefik/reference/routing-configuration/tcp/tls/)
+- [Sharing an entrypoint between TCP and HTTP routers](https://doc.traefik.io/traefik/reference/routing-configuration/tcp/routing/router/)
+- [Docker Compose service inheritance](https://docs.docker.com/compose/how-tos/multiple-compose-files/extends/)
 
-The iPhone PWA requires the same HTTPS dashboard domain. The app serves its manifest, Apple touch icon and generated service worker from that origin. Do not add proxy rules that cache `/api/*`; private API responses use `Cache-Control: no-store`.
+The iPhone PWA uses the dashboard’s HTTPS domain. Do not add proxy rules that cache `/api/*`; private API responses use `Cache-Control: no-store`.

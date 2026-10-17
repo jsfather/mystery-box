@@ -1,7 +1,14 @@
 import { useRef, useState } from "react";
 import { Heart, ArrowUpRight, Check, LoaderCircle, Sparkles } from "lucide-react";
 import type { Snapshot, Settings } from "../../shared/model";
-import { elapsedLove, momentFromWall, wallTime } from "../../shared/love";
+import {
+  elapsedLove,
+  momentFromWall,
+  wallTime,
+  loveFormats,
+  loveLine,
+} from "../../shared/love";
+import { TimezoneSelect } from "./TimezoneSelect";
 import type { SaveSettings } from "./api";
 export function LoveHero({
   snapshot,
@@ -80,6 +87,7 @@ export function LovePage({ snapshot, save }: { snapshot: Snapshot; save: SaveSet
   const initial = snapshot.settings;
   const [love, setLove] = useState(initial.love),
     [mode, setMode] = useState(initial.displayMode),
+    [schedule, setSchedule] = useState(initial.schedule),
     [wall, setWall] = useState(
       initial.love.startAt ? wallTime(initial.love.startAt, initial.love.timezone) : "",
     ),
@@ -98,7 +106,7 @@ export function LovePage({ snapshot, save }: { snapshot: Snapshot; save: SaveSet
       if (Date.parse(startAt) > snapshot.serverTime)
         throw new Error("Choose a starting moment in the past");
       baseline.current = await save(
-        { ...snapshot.settings, displayMode: mode, love: { ...love, startAt } },
+        { ...snapshot.settings, displayMode: mode, schedule, love: { ...love, startAt } },
         baseline.current,
       );
       setSaved(true);
@@ -146,18 +154,11 @@ export function LovePage({ snapshot, save }: { snapshot: Snapshot; save: SaveSet
             changing the clock’s timezone won’t change how long you’ve been together.
           </p>
           <label htmlFor="love-zone">Timezone where it happened</label>
-          <input
+          <TimezoneSelect
             id="love-zone"
-            list="love-zones"
-            required
             value={love.timezone}
-            onChange={(e) => setLove({ ...love, timezone: e.target.value })}
+            onChange={(timezone) => setLove({ ...love, timezone })}
           />
-          <datalist id="love-zones">
-            {["UTC", ...Intl.supportedValuesOf("timeZone")].map((zone) => (
-              <option key={zone} value={zone} />
-            ))}
-          </datalist>
           <details className="dst-details">
             <summary>If the clocks changed that night</summary>
             <p>
@@ -192,8 +193,55 @@ export function LovePage({ snapshot, save }: { snapshot: Snapshot; save: SaveSet
             onChange={(e) => setMode(e.target.value as Settings["displayMode"])}
           >
             <option value="clock">Date & time</option>
+            <option value="scheduled">Date & time with scheduled story moments</option>
             <option value="love">Our time together</option>
             <option value="alternate">A little of both · switch every 12 seconds</option>
+          </select>
+          {mode === "scheduled" && (
+            <div className="schedule-fields">
+              <label htmlFor="story-interval">Show our story every · minutes</label>
+              <input
+                id="story-interval"
+                type="number"
+                min="1"
+                max="1440"
+                required
+                value={schedule.everyMinutes}
+                onChange={(e) =>
+                  setSchedule({ ...schedule, everyMinutes: +e.target.value })
+                }
+              />
+              <label htmlFor="story-duration">For · seconds</label>
+              <input
+                id="story-duration"
+                type="number"
+                min="5"
+                max={Math.min(3600, schedule.everyMinutes * 60 - 1)}
+                required
+                value={schedule.durationSeconds}
+                onChange={(e) =>
+                  setSchedule({ ...schedule, durationSeconds: +e.target.value })
+                }
+              />
+              <p className="input-note">
+                For example: every 10 minutes, show our story for 30 seconds. Windows
+                follow fixed UTC intervals; messages take priority.
+              </p>
+            </div>
+          )}
+          <label htmlFor="story-format">How should we count our time?</label>
+          <select
+            id="story-format"
+            value={love.format}
+            onChange={(e) =>
+              setLove({ ...love, format: e.target.value as Settings["love"]["format"] })
+            }
+          >
+            {Object.entries(loveFormats).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
           {error && (
             <p className="error" role="alert">
@@ -231,7 +279,11 @@ export function LovePage({ snapshot, save }: { snapshot: Snapshot; save: SaveSet
           </p>
           <div className="love-lcd-sample">
             <span>{love.title || "YOU & ME <3"}</span>
-            <strong>1234d 05:06:07</strong>
+            <strong>
+              {love.startAt
+                ? loveLine(love.startAt, snapshot.serverTime, love.format)
+                : "Your story starts here"}
+            </strong>
           </div>
           <p>
             Messages take the stage when you send them, then your story returns. If Wi-Fi

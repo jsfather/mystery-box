@@ -34,14 +34,5 @@ max_queued_messages 1
 max_inflight_messages 1
 listener 1883
 CONF
-if [ "${MQTT_TLS_ENABLED:-false}" = true ]; then
-  test -r /mosquitto/certs/fullchain.pem && test -r /mosquitto/certs/privkey.pem || { echo 'Mount readable MQTT certificates' >&2; exit 1; }
-  cat >> /mosquitto/generated/mosquitto.conf <<'CONF'
-listener 8883
-certfile /mosquitto/certs/fullchain.pem
-keyfile /mosquitto/certs/privkey.pem
-tls_version tlsv1.2
-CONF
-fi
 chown -R mosquitto:mosquitto /mosquitto/generated
 exec mosquitto -c /mosquitto/generated/mosquitto.conf

@@ -18,6 +18,9 @@ export const timezoneSchema = z
   }, "Choose a valid IANA timezone");
 export const loveSchema = z
   .object({
+    format: z
+      .enum(["daysClock", "seconds", "days", "weeks", "hours", "rotate"])
+      .default("daysClock"),
     names: z.string().trim().min(1).max(80).default("You & me"),
     startAt: z.iso
       .datetime({ offset: true })
@@ -40,8 +43,23 @@ export const settingsSchema = z
           return false;
         }
       }, "Choose a valid IANA timezone"),
-    displayMode: z.enum(["clock", "love", "alternate"]).default("clock"),
+    displayMode: z.enum(["clock", "love", "alternate", "scheduled"]).default("clock"),
+    schedule: z
+      .object({
+        everyMinutes: z.number().int().min(1).max(1440),
+        durationSeconds: z.number().int().min(5).max(3600),
+      })
+      .strict()
+      .default({ everyMinutes: 10, durationSeconds: 30 }),
+    messaging: z
+      .object({
+        mode: z.enum(["full", "clock"]),
+        defaultDuration: z.number().int().min(5).max(300),
+      })
+      .strict()
+      .default({ mode: "full", defaultDuration: 120 }),
     love: loveSchema.default({
+      format: "daysClock",
       startAt: null,
       timezone: "Asia/Tehran",
       title: "YOU & ME <3",
@@ -66,6 +84,12 @@ export const settingsSchema = z
   })
   .strict()
   .superRefine((s, ctx) => {
+    if (s.schedule.durationSeconds >= s.schedule.everyMinutes * 60)
+      ctx.addIssue({
+        code: "custom",
+        path: ["schedule"],
+        message: "Story duration must be shorter than its repeat interval",
+      });
     if (s.displayMode !== "clock" && !s.love.startAt)
       ctx.addIssue({
         code: "custom",
@@ -76,7 +100,10 @@ export const settingsSchema = z
 export type Settings = z.infer<typeof settingsSchema>;
 export const defaults: Settings = {
   displayMode: "clock",
+  schedule: { everyMinutes: 10, durationSeconds: 30 },
+  messaging: { mode: "full", defaultDuration: 120 },
   love: {
+    format: "daysClock",
     startAt: null,
     timezone: "Asia/Tehran",
     title: "YOU & ME <3",
@@ -101,7 +128,7 @@ export const messageSchema = z
       .min(1)
       .max(160)
       .refine((s) => s.trim().length > 0, "Enter a message"),
-    duration: z.number().int().min(5).max(300),
+    duration: z.number().int().min(5).max(300).optional(),
   })
   .strict();
 export interface Message {
@@ -132,6 +159,7 @@ export interface Frame {
   loveSince: number;
   loveEnabled: boolean;
   loveTitle: string;
+  loveFormat: number;
 }
 export interface Device {
   online: boolean;
@@ -150,6 +178,7 @@ export interface Snapshot {
   serverTime: number;
   deviceId: string;
   settingsRevision: number;
+  resetRevision: number;
 }
 
 export interface User {

@@ -12,6 +12,7 @@ export default defineConfig({
       writeBundle(_options, bundle) {
         const assets = [
           "/offline.html",
+          "/theme.js",
           "/icons/icon-192.png",
           "/icons/icon-512.png",
           "/icons/maskable-512.png",

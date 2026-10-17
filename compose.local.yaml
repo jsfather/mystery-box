@@ -1,4 +1,4 @@
-# Trusted LAN development. Run with compose.yaml; production uses compose.tls.yaml.
+# Trusted LAN development. Run with compose.yaml; Dokploy production uses compose.dokploy.yaml.
 services:
   app:
     environment:

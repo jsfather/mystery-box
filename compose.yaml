@@ -1,4 +1,5 @@
-# Production base. Dokploy routes HTTPS to app:3000. No public plaintext MQTT.
+# Shared service definitions. For Dokploy select compose.dokploy.yaml.
+# No public plaintext MQTT ports; Traefik handles production TLS.
 services:
   app:
     build: .

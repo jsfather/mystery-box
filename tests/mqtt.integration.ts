@@ -127,6 +127,22 @@ try {
     (f) => !!f && f.clock,
   );
   console.log("PASS message and cancellation reach device");
+  await api("settings", "PUT", {
+    ...defaults,
+    timezone: "UTC",
+    messaging: { mode: "clock", defaultDuration: 120 },
+  });
+  const chat = await api("messages", "POST", {
+    text: "Our conversation reaches the little box",
+  });
+  assert.equal(chat.expiresAt - chat.startsAt, 120000);
+  await until(
+    async () => latest,
+    (f) => !!f && /^\s*\d{2}:\d{2}:\d{2}\s*$/.test(f.line1) && !f.clock,
+  );
+  assert.equal(latest!.line2.length, 16);
+  await api(`messages/${chat.id}`, "DELETE");
+  console.log("PASS two-minute default and clock-above-message layout reach MQTT device");
   const loveStart = "2020-02-14T14:49:20.000Z";
   await api("settings", "PUT", {
     ...defaults,
@@ -143,6 +159,16 @@ try {
   );
   assert.match(latest!.line2, /\d+d \d{2}:\d{2}:\d{2}/);
   console.log("PASS love counter and offline starting instant reach MQTT device");
+  await api("settings", "PUT", {
+    ...defaults,
+    displayMode: "love",
+    love: { ...defaults.love, startAt: loveStart, format: "seconds" },
+  });
+  await until(
+    async () => latest,
+    (f) => !!f && f.love && f.loveFormat === 1 && /\d+s\s*$/.test(f.line2),
+  );
+  console.log("PASS total-seconds counter and offline format reach MQTT device");
   await device.publishAsync(`${base}/frame`, JSON.stringify({ unauthorized: true }), {
     qos: 0,
   });

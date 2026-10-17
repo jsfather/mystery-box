@@ -98,3 +98,46 @@ test("reject unsupported characters, oversized frames and invalid zones", () => 
     false,
   );
 });
+
+test("clock-and-message layout keeps live time while scrolling only the bottom row", () => {
+  const now = Date.parse("2026-10-17T12:00:00Z"),
+    settings = s();
+  settings.messaging.mode = "clock";
+  const message = {
+    id: "chat",
+    text: "Every little moment with you is my favourite",
+    startsAt: now,
+    expiresAt: now + 120000,
+    createdAt: now,
+    cancelled: false,
+  };
+  const first = render(settings, [message], now),
+    later = render(settings, [message], now + 1000);
+  assert.equal(first.line1.trim(), clockParts(now, settings).time);
+  assert.equal(later.line1.trim(), clockParts(now + 1000, settings).time);
+  assert.notEqual(first.line2, later.line2);
+  assert.equal(first.line2.length, 16);
+  assert.equal(
+    render(settings, [{ ...message, text: "Love you" }], now).line2.trim(),
+    "Love you",
+  );
+  assert.equal(render(settings, [message], now + 120000).clock, true);
+});
+
+test("old settings acquire safe messaging, schedule and counter defaults", () => {
+  const legacy: any = structuredClone(defaults);
+  delete legacy.messaging;
+  delete legacy.schedule;
+  delete legacy.love.format;
+  const migrated = settingsSchema.parse(legacy);
+  assert.equal(migrated.messaging.defaultDuration, 120);
+  assert.equal(migrated.love.format, "daysClock");
+  assert.equal(migrated.schedule.everyMinutes, 10);
+  assert.ok(
+    !settingsSchema.safeParse({
+      ...migrated,
+      schedule: { everyMinutes: 1, durationSeconds: 60 },
+    }).success,
+  );
+  assert.ok(messageSchema.safeParse({ text: "Default duration" }).success);
+});

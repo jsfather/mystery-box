@@ -1,4 +1,4 @@
-import { elapsedLove } from "../shared/love.js";
+import { loveLine, storyVisible } from "../shared/love.js";
 import type { Frame, Message, Settings } from "../shared/model.js";
 const center = (text: string) =>
   text
@@ -196,16 +196,10 @@ export function render(
   );
   let line1 = center(c.time),
     line2 = center(c.date + (s.calendar === "persian" ? " J" : " G"));
-  const love =
-    !!s.love.startAt &&
-    (s.displayMode === "love" ||
-      (s.displayMode === "alternate" && Math.floor(now / 12000) % 2 === 1));
+  const love = storyVisible(s, now);
   if (love) {
-    const elapsed = elapsedLove(s.love.startAt!, now);
     line1 = center(s.love.title);
-    line2 = center(
-      `${elapsed.days}d ${String(elapsed.hours).padStart(2, "0")}:${String(elapsed.minutes).padStart(2, "0")}:${String(elapsed.seconds).padStart(2, "0")}`,
-    );
+    line2 = center(loveLine(s.love.startAt!, now, s.love.format));
   }
   if (active) {
     const rows = active.text.match(/.{1,16}/g) ?? [];
@@ -216,7 +210,15 @@ export function render(
         rows[1] = active.text.slice(boundary + 1);
       }
     }
-    if (active.text.length <= 32) {
+    if (s.messaging.mode === "clock") {
+      line1 = center(c.time);
+      const text = active.text + "    ";
+      const pos = Math.floor((now - active.startsAt) / 300) % text.length;
+      line2 =
+        active.text.length <= 16
+          ? center(active.text)
+          : (text + text).slice(pos, pos + 16).padEnd(16);
+    } else if (active.text.length <= 32) {
       line1 = center(rows[0] ?? "");
       line2 = center(rows[1] ?? "");
     } else {
@@ -240,6 +242,9 @@ export function render(
     loveEnabled: !!s.love.startAt && s.displayMode !== "clock",
     loveSince: s.love.startAt ? Math.floor(Date.parse(s.love.startAt) / 1000) : 0,
     loveTitle: s.love.title,
+    loveFormat: ["daysClock", "seconds", "days", "weeks", "hours", "rotate"].indexOf(
+      s.love.format,
+    ),
     hour12: s.hour12,
     seconds: s.showSeconds,
     dateKey: c.dateKey,

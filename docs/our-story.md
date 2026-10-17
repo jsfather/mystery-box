@@ -18,23 +18,33 @@ Open **Our story**:
 2. Enter the Gregorian date, time **and seconds** when your story began.
 3. Choose the IANA timezone where it happened, such as `Asia/Tehran`. This is independent of the phone’s timezone and the clock’s current display timezone.
 4. Set a short LCD dedication, such as `YOU & ME <3`. The physical character LCD still requires Latin/ASCII text, up to 16 characters.
-5. Choose **Our time together**, **Date & time**, or **A little of both**.
+5. Choose **Our time together**, **Date & time**, **A little of both**, or scheduled story moments.
+6. Choose a counter format: days/time, total seconds, total days, weeks/days, total hours, or a rotating view.
+7. For scheduled moments, set a repeat interval in minutes and a duration in seconds, for example **every 10 minutes for 30 seconds**.
 
 The chosen moment is saved as an absolute instant. The timer shows complete elapsed **days, hours, minutes and seconds**. One elapsed day is exactly 86,400 seconds; this is not a calendar-month/year breakdown. Changing the display calendar or timezone never changes that starting instant. Future start times are rejected. If you choose a time repeated by a daylight saving transition, expand “If the clocks changed that night” to pick the first or second occurrence. Nonexistent local times are rejected.
 
-The LCD dedicates the first row to your title and uses the second row for a compact counter such as `1234d 05:06:07`. Alternate mode switches between the clock and love counter every 12 seconds. Messages temporarily take priority, and your chosen display resumes when the message window ends.
+The LCD dedicates the first row to your title and uses the second row for a compact counter such as `1234d 05:06:07`. Alternate mode switches between the clock and love counter every 12 seconds. Scheduled mode opens a story window at each fixed UTC interval boundary; its duration must be shorter than its interval. With a 10-minute interval, windows start on UTC :00, :10, :20, and so on. The schedule follows elapsed time through DST changes. The dashboard offers an immediate mode dropdown next to the backlight control. Messages temporarily take priority, and your chosen display resumes when the message window ends.
 
-**Upload the updated firmware (1.1.0)** to keep the love counter running during network loss. The firmware caches the starting instant and counts using the onboard RTC while power remains on. An `*` marks offline output. During an outage, alternate mode falls back to the love counter. After a complete power loss, it must reconnect to synchronize again; the listed hardware has no RTC backup battery. Older firmware displays online love frames but falls back to its ordinary clock during an outage.
+**Upload the updated firmware (1.1.0)** to keep the love counter running during network loss. The firmware caches the starting instant and counts using the onboard RTC while power remains on. An `*` marks offline output. During an outage, alternate and scheduled modes fall back to the love counter. The updated sketch preserves the selected counter format offline, including rotating formats. Reflash to obtain that behavior; the online formats work with the previous sketch. After a complete power loss, it must reconnect to synchronize again; the listed hardware has no RTC backup battery. Older firmware displays online love frames but falls back to its ordinary clock during an outage.
 
 ## Your notes and journal
 
-**Messages** includes a searchable, paginated archive, the sender’s display name at send time, timestamps, cancellation status, and **Send again**. Notes persist after their display windows expire and after server restarts. New notes are no longer automatically deleted after the most recent 100. The live dashboard uses a recent 100-note view; the full archive remains accessible through pagination. Notes already purged by the old version cannot be recovered.
+**Messages** is your shared conversation: your own bubbles are on the right and your partner’s on the left, with the sender’s saved name and timestamp. Both accounts see the same messages in real time while the app is open. Search, load earlier messages, cancel an LCD display window, or choose **Show again**. Cancelling a display window keeps the chat message. Every newly sent message is also queued for the physical box. The default duration is **two minutes**. Change the default and choose a full-message layout or **time on top / message below** in **Preferences**. The latter keeps the top clock live while long messages scroll across the bottom. Individual messages can override duration. Notes persist after their display windows expire and after server restarts. New notes are no longer automatically deleted after the most recent 100. The live dashboard uses a recent 100-note view; the full archive remains accessible through pagination. Notes already purged by the old version cannot be recovered.
 
 **Our journal** records sign-ins/sign-outs, unsuccessful sign-ins, account changes, settings changes, notes sent/cancelled, server starts/stops, and broker/device connection changes. Entries persist in SQLite and are paginated. They omit passwords, password hashes and session tokens. The journal stores actor names at the time of the action. It is application activity history, not a tamper-proof forensic audit trail against somebody who controls the host/database.
 
 Both partners edit the same settings. Each settings save includes a revision: if another device has saved since you opened a form, the server rejects your stale change rather than silently replacing theirs. Reload the page to review the latest settings before saving again.
 
-Keep the database volume and back it up consistently. It now contains personal notes, names, your special date, password hashes, session hashes, and activity. No private API responses are cached by the service worker. Notes and logs remain on the server until you intentionally remove or restore database data; monitor disk space for long-running installations.
+Keep the database volume and back it up consistently. It now contains personal notes, names, your special date, password hashes, session hashes, and activity. No private API responses are cached by the service worker. Notes and logs remain on the server until you intentionally erase them through factory reset or restore database data; monitor disk space for long-running installations.
+
+## Appearance and factory reset
+
+The app follows the device’s light/dark appearance by default, including live device-theme changes. Use the theme dropdown in the header or **Preferences** to override it for this browser. Theme choices persist on the device, independently for each browser, and synchronize across its open tabs. The offline page also respects the saved preference. Main text, muted text and conversation color pairs have automated WCAG AA contrast checks.
+
+In **Preferences → Factory reset**, either owner can restore display settings, remove the saved story moment, and cancel active/future LCD messages. Accounts, passwords, sessions and MQTT/Wi-Fi credentials remain. The confirmation form requires your current password and typing `RESET`.
+
+By default the conversation and journal are preserved. Selecting **Also permanently erase our conversation and journal** deletes those records in the same transaction; a new reset journal entry records who performed the reset. There is no undo for this option. This resets server-managed box settings, not the Wi-Fi credentials compiled into the Arduino sketch. Existing installations upgrade automatically with two-minute messages, the full-message layout and the original days/time counter.
 
 ## Install on her iPhone
 

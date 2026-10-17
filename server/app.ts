@@ -170,6 +170,39 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
       res.status(409).json({ error: (e as Error).message });
     }
   });
+  app.post("/api/factory-reset", auth, (req, res) => {
+    const { password, confirmation, eraseHistory } = req.body ?? {};
+    if (
+      confirmation !== "RESET" ||
+      typeof eraseHistory !== "boolean" ||
+      typeof password !== "string" ||
+      password.length > 256
+    ) {
+      res.status(400).json({ error: "Type RESET and enter your password" });
+      return;
+    }
+    const ip = `reset:${req.ip ?? "unknown"}`,
+      now = Date.now();
+    let attempt = attempts.get(ip);
+    if (!attempt || attempt.until <= now) {
+      attempt = { count: 0, until: now + 900000 };
+      attempts.set(ip, attempt);
+    }
+    if (++attempt.count > 5) {
+      res
+        .status(429)
+        .json({ error: "Too many reset attempts. Try again in 15 minutes." });
+      return;
+    }
+    if (!store.verifyUser(res.locals.user.username, password)) {
+      res.status(403).json({ error: "Incorrect password" });
+      return;
+    }
+    store.factoryReset(res.locals.user, eraseHistory);
+    attempts.delete(ip);
+    runtime.changed();
+    res.json({ ok: true });
+  });
   app.post("/api/messages", auth, (req, res) => {
     const m = messageSchema.safeParse(req.body);
     if (!m.success) {
@@ -179,7 +212,7 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
     try {
       const saved = store.enqueue(
         m.data.text,
-        m.data.duration,
+        m.data.duration ?? store.settings().messaging.defaultDuration,
         Date.now(),
         res.locals.user,
       );

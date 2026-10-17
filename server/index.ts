@@ -126,6 +126,7 @@ const snapshot = (): Snapshot => ({
   serverTime: Date.now(),
   deviceId: config.DEVICE_ID,
   settingsRevision: store.revision(),
+  resetRevision: store.resetRevision(),
 });
 const app = createApp(config, store, {
   snapshot,

@@ -10,7 +10,8 @@ flowchart LR
     App -->|SSE preview| Browser
     App --> DB[(SQLite)]
     App -->|Current display frame / 5 Hz| Broker[Mosquitto]
-    Broker -->|MQTT TLS / 8883| Uno[UNO R4 WiFi]
+    Broker <-->|Private MQTT / 1883| Proxy[Dokploy Traefik]
+    Proxy <-->|MQTT TLS / 443| Uno[UNO R4 WiFi]
     Uno -->|Heartbeat and last frame| Broker
     Broker --> App
     Uno --> LCD[1602 I2C LCD]
@@ -29,7 +30,7 @@ This trades offline animation and bandwidth for central control. The display str
 - QoS 0 frames are intentionally disposable: the next complete state repairs a dropped frame within ~200ms while connected. Never retransmit a long backlog of stale animation.
 - Commands become durable server settings or scheduled messages, not retained imperative commands.
 
-HTTPS polling is easy to deploy but repeated handshakes and response latency are less suitable for streamed animations. WebSockets could work, but MQTT gives this small device a standard client, broker ACLs and liveness semantics. Native TLS requires a second public TCP port/certificate endpoint beside the HTTPS dashboard.
+HTTPS polling is easy to deploy but repeated handshakes and response latency are less suitable for streamed animations. WebSockets could work, but MQTT gives this small device a standard client, broker ACLs and liveness semantics. Native MQTT TLS shares Dokploy’s existing port 443 using a dedicated hostname and Traefik TCP/SNI routing. Dokploy’s existing ACME resolver automatically issues and renews that hostname’s certificate; the broker does not load certificate files.
 
 ## Display stream v1
 
@@ -84,7 +85,7 @@ The RTC is synchronized on the first valid frame and every 60 seconds. Online LC
 
 The onboard RTC runs while powered. No backup battery is included in the user’s hardware list: after a full power loss the device waits for a new server synchronization. RTC accuracy depends on the board oscillator; this is a desk clock, not a precision time instrument. Network delay is not compensated, so online/offline synchronization accuracy is approximately one second plus network latency.
 
-Messages are scheduled in FIFO windows, each 5–300 seconds. Windows are wall-clock server times persisted in SQLite. Offline devices miss elapsed windows. Cancelling ends an active message on the next frame but does not reflow later windows. There is no “guaranteed delivery” queue; this avoids showing yesterday’s message after reconnecting.
+Messages are scheduled in FIFO windows, each 5–300 seconds (default 120 seconds, configurable in `messaging.defaultDuration`). `messaging.mode` selects `full` (two rows, or header plus scrolling text) or `clock` (live clock above a centered/scrolling message). Windows are wall-clock server times persisted in SQLite. Offline devices miss elapsed windows. Cancelling ends an active message on the next frame but does not reflow later windows. There is no “guaranteed delivery” queue; this avoids showing yesterday’s message after reconnecting.
 
 The UI calls its live hardware visualization a **server preview**. A disconnected physical board is never shown as online solely because the preview is animating.
 
@@ -104,7 +105,8 @@ All `/api` endpoints except session lookup/login require a 30-day, HTTP-only ses
 | `GET /api/state` | Snapshot with settings, frame, device status, message history |
 | `GET /api/events` | SSE snapshots at 5 Hz; max 20 live clients |
 | `PUT /api/settings` | Replace validated settings atomically; required `If-Match` revision header; 409 for stale saves |
-| `POST /api/messages` | `{ "text": "Hello", "duration": 15 }`; append a window |
+| `POST /api/messages` | `{ "text": "Hello", "duration": 120 }`; append a window; omitted duration uses the saved default |
+| `POST /api/factory-reset` | Authenticated `{ "password": "…", "confirmation": "RESET", "eraseHistory": false }`; restore defaults and cancel windows, optionally erase notes/journal; preserve accounts and credentials |
 | `DELETE /api/messages/:id` | Cancel an active or queued window |
 
 ## Research references
@@ -124,10 +126,17 @@ Read against official documentation/source during implementation:
 
 ## Love mode and PWA
 
-Settings now include `displayMode` (`clock`, `love`, `alternate`) and `love` (`startAt`, `timezone`, `title`, `names`). The UTC instant never changes when the clock timezone changes. Elapsed days are 24-hour durations, with the remaining hours/minutes/seconds. Messages override both clock and love modes for their window. `alternate` uses 12-second phases.
+Settings include `displayMode` (`clock`, `love`, `alternate`, `scheduled`) and `love` (`startAt`, `timezone`, `title`, `names`, `format`). The UTC instant never changes when the clock timezone changes. Elapsed days are 24-hour durations, with the remaining hours/minutes/seconds. Messages override both clock and love modes for their window. `alternate` uses 12-second phases.
 
-Frames additionally include `love` (currently showing the counter), `loveSince` (UTC seconds), `loveTitle` (ASCII dedication), and `loveEnabled` (whether offline fallback should count love). Firmware 1.1.0 uses the RTC to maintain elapsed time while disconnected. Older firmware ignores those fields and retains its previous offline clock behavior. The protocol version remains 1 because the added fields are backward compatible. A reflash is needed for the new offline love behavior.
+Frames additionally include `love` (currently showing the counter), `loveSince` (UTC seconds), `loveTitle` (ASCII dedication), `loveEnabled` (whether offline fallback should count love), and `loveFormat` (0 days/time, 1 seconds, 2 days, 3 weeks, 4 hours, 5 rotating). Firmware 1.1.0 uses the RTC to maintain elapsed time while disconnected. Older firmware ignores those fields and retains its previous offline clock behavior. The protocol version remains 1 because the added fields are backward compatible. A reflash is needed for the new offline love behavior.
 
 Message storage no longer prunes at 100 entries. Only the live snapshot is bounded; history and activity have cursor pagination. Authors and actor names are captured at write time, including after subsequent profile changes. Mutations and their activity entries are written in the same SQLite transaction. Login failures and system connection transitions are also logged without secrets. Settings revisions prevent silent overwrites between two owners’ devices.
 
 The PWA service worker precaches a versioned list of static build assets and an offline page. It does not intercept or cache `/api/*`, `/healthz`, or mutations. Navigation attempts the network and shows the offline page on failure. It never queues commands or caches private snapshots. App updates require an explicit UI action before a waiting worker takes control. See [the shared setup and iPhone guide](our-story.md).
+
+
+### Display scheduling and appearance
+
+`displayMode` accepts `clock`, `love`, `alternate` (12-second intervals), and `scheduled`. Scheduled story windows begin at fixed UTC interval boundaries: `(epochSeconds % (schedule.everyMinutes * 60)) < schedule.durationSeconds`. The validated duration is shorter than the interval. Messages override the selected scene without shifting its schedule. `love.format` chooses days/time, seconds, days, weeks, hours or a 10-second rotating counter. Counter calculations use exact elapsed seconds, not calendar days. Existing settings acquire schema defaults on read without discarding saved data. Factory resets atomically increment a persistent `resetRevision` in snapshots; open clients remount their page so old forms, conversations and journal entries do not remain visible after a reset.
+
+Application theme is per-browser (`mb-theme`: `system`, `light`, `dark`). An external, CSP-compatible startup script applies it before the app paints, follows `prefers-color-scheme`, and synchronizes local tabs. The script is included in the versioned static PWA cache. Chat and API data remain uncached. The server keeps all settings shared between the two owners; light/dark preference does not change device backlight.

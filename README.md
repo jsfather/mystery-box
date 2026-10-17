@@ -16,7 +16,11 @@ Start with [your shared story, accounts and iPhone installation](docs/our-story.
 - Install the PWA on an iPhone Home Screen from Safari over HTTPS.
 - Choose **Jalali/Persian or Gregorian** dates, three date orders, any IANA timezone, 12/24-hour time, and seconds.
 - Switch the LCD backlight on/off without stopping the clock.
-- Queue up to 20 timed messages. Short messages use both rows; messages longer than 32 characters scroll.
+- Chat in a shared conversation with named, two-sided bubbles. Notes remain saved after their LCD display windows end.
+- Queue up to 20 timed messages, shown for two minutes by default. Choose a full-screen message or live time above a scrolling message, and change the default duration in Preferences.
+- Set story windows (for example, 30 seconds every 10 minutes), switch display modes from the dashboard, and choose days/time, total seconds, days, weeks, hours or a rotating counter.
+- Follow the device theme automatically or choose light/dark appearance. Timezones use dropdowns throughout.
+- Restore factory display settings with password confirmation, optionally erasing personal message and journal history while keeping accounts.
 - Play heart, wave, and rain animations; scroll Latin text; draw and sequence up to 32 custom matrix frames.
 - See the server’s intended output live, plus device heartbeat, signal strength, IP, firmware, and last frame reported.
 - Keep settings, message history, accounts, sessions and activity across server restarts.
@@ -50,7 +54,7 @@ The LED matrix is already on the UNO R4 WiFi. No wiring required. Use 2.4 GHz Wi
 
 4. Open [localhost:3000](http://localhost:3000), sign in using `ADMIN_USERNAME` (default `husband`) and `ADMIN_PASSWORD`. Optionally set `PARTNER_PASSWORD` before the first launch to create both accounts, or create her account from **You & me**.
 
-By default HTTP and plaintext MQTT bind to loopback. To connect a physical board on a **trusted local network**, set `MQTT_BIND_ADDRESS` in `.env` to your computer’s LAN IP and restart Compose. Set the firmware’s `MQTT_HOST` to that LAN IP, `MQTT_TLS` to `0`, and `MQTT_PORT` to `1883`. Do not publish plaintext MQTT to the internet. For public deployment use the TLS setup in [docs/deployment.md](docs/deployment.md).
+By default HTTP and plaintext MQTT bind to loopback. To connect a physical board on a **trusted local network**, set `MQTT_BIND_ADDRESS` in `.env` to your computer’s LAN IP and restart Compose. Set the firmware’s `MQTT_HOST` to that LAN IP, `MQTT_TLS` to `0`, and `MQTT_PORT` to `1883`. Do not publish plaintext MQTT to the internet. For public deployment use Dokploy’s automatic TLS setup in [docs/deployment.md](docs/deployment.md).
 
 ## Upload firmware
 
@@ -67,7 +71,7 @@ By default HTTP and plaintext MQTT bind to loopback. To connect a physical board
 
 3. Open `firmware/mystery_box/mystery_box.ino`.
 4. Copy `arduino_secrets.h.example` beside it as `arduino_secrets.h`. Fill in your Wi-Fi, broker hostname, device ID and **device** password. The MQTT username is `device`, not `server`. `DEVICE_ID` must match the server environment.
-5. Production: use `MQTT_TLS 1`, port `8883`, and the broker’s certificate hostname. Update the UNO R4 WiFi connectivity firmware using Arduino IDE’s Firmware Updater. The default CA bundle is used unless you supply a PEM root CA through `MQTT_ROOT_CA`. Never disable certificate verification to fix a connection problem.
+5. Production: use `MQTT_TLS 1`, port `443`, and the dedicated `MQTT_DOMAIN` hostname. Update the UNO R4 WiFi connectivity firmware using Arduino IDE’s Firmware Updater. The default CA bundle is used unless you supply a PEM root CA through `MQTT_ROOT_CA`. Never disable certificate verification to fix a connection problem.
 6. Upload. The board runs without a computer or Serial Monitor attached. Serial diagnostics use **115200 baud**.
 
 For a private root certificate, replace the macro in your untracked secrets file with a raw string:
@@ -116,11 +120,14 @@ For the last command, when serving the built dashboard at port 3000, change `APP
 node --env-file=.env --import tsx scripts/simulate.ts
 ```
 
-The simulator authenticates with the MQTT **device** account, subscribes to real MQTT frames, prints the LCD, and publishes heartbeats. It is not a substitute for electrical or on-device testing. Stop it before powering the real board; otherwise its telemetry would share the same device topic. To use a public TLS broker, set `SIMULATOR_MQTT_URL=mqtts://mqtt.example.com:8883`.
+The simulator authenticates with the MQTT **device** account, subscribes to real MQTT frames, prints the LCD, and publishes heartbeats. It is not a substitute for electrical or on-device testing. Stop it before powering the real board; otherwise its telemetry would share the same device topic. To use a public TLS broker, set `SIMULATOR_MQTT_URL=mqtts://mqtt.example.com:443`.
 
 ## Deployment and architecture
 
-- [Dokploy, TLS certificates, persistent data and backups](docs/deployment.md)
+For Dokploy, select **`compose.dokploy.yaml`**. Add the dashboard domain to `app:3000`, and set a separate `MQTT_DOMAIN` (for example `mqtt.example.com`) pointing to the same server. The included Traefik TCP router reuses Dokploy’s automatic certificate resolver on port 443. You do not need a certificate directory or manual renewal. See the deployment guide below.
+
+
+- [Dokploy automatic certificates, persistent data and backups](docs/deployment.md)
 - [Architecture, MQTT protocol, outage behavior and research](docs/architecture.md)
 
 This is a shared-owner, single-device, single-server application. Run **one app replica** against its SQLite volume and one configured device. Add per-device identities, storage, and broker ACLs before using it for a fleet.
@@ -129,6 +136,6 @@ This is a shared-owner, single-device, single-server application. Run **one app 
 
 `npm run check` checks TypeScript, the production frontend build and the automated test suite. `npm run test:integration` additionally checks real MQTT traffic against an **isolated disposable** stack; supply `TEST_ENV_FILE`, `TEST_HTTP_URL` and `TEST_MQTT_URL` when using addresses other than the verification defaults in that script. Never run it against your physical board or production data: it changes settings and sends messages.
 
-Docker image build, local Compose startup, browser sign-in/message controls, native MQTT frame delivery, topic ACLs, invalid-password rejection, last-will status and TLS certificate acceptance/rejection were checked locally. The actual UNO/LCD have not been connected here. Local Arduino compilation was blocked by HTTP 403 responses from Arduino’s package download service. A firmware compile job is included in `.github/workflows/ci.yml`; run it or compile in Arduino IDE before uploading.
+Docker image build, local Compose startup, browser sign-in/message controls, native MQTT frame delivery, topic ACLs, invalid-password rejection, last-will status, TLS certificate acceptance/rejection and Traefik sharing one TLS listener between HTTPS and MQTT were checked locally. The actual UNO/LCD have not been connected here. Local Arduino compilation was blocked by HTTP 403 responses from Arduino’s package download service. A firmware compile job is included in `.github/workflows/ci.yml`; run it or compile in Arduino IDE before uploading.
 
-Version 1.1 adds the shared love clock, equal-owner accounts, permanent note history, the activity journal and the iPhone PWA. See [Our story](docs/our-story.md) for first setup and upgrade details. The automated suite currently has 26 tests; actual iPhone installation and firmware behavior still require the real devices.
+Version 1.1 adds the shared love clock, equal-owner accounts, permanent note history, the activity journal and the iPhone PWA. See [Our story](docs/our-story.md) for first setup and upgrade details. The automated suite currently has 36 tests; actual iPhone installation and firmware behavior still require the real devices.

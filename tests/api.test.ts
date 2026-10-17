@@ -33,6 +33,7 @@ test("authenticated API validates changes, rejects cross origin and serves SSE",
       serverTime: Date.now(),
       deviceId: "uno-r4",
       settingsRevision: store.revision(),
+      resetRevision: store.resetRevision(),
     }),
     changed: () => {},
     listen: (_fn: () => void) => () => {},
@@ -123,6 +124,107 @@ test("authenticated API validates changes, rejects cross origin and serves SSE",
       (await req("/api/messages/" + id, { method: "DELETE", headers })).status,
       200,
     );
+    const defaultMessage = await (
+      await req(
+        "/api/messages",
+        post({ text: "Two minutes together" }, { Cookie: cookie }),
+      )
+    ).json();
+    assert.equal(defaultMessage.expiresAt - defaultMessage.startsAt, 120000);
+    store.saveSettings({
+      ...store.settings(),
+      messaging: { mode: "clock", defaultDuration: 60 },
+    });
+    const customDefault = await (
+      await req("/api/messages", post({ text: "Our custom default" }, { Cookie: cookie }))
+    ).json();
+    assert.equal(customDefault.expiresAt - customDefault.startsAt, 60000);
+    assert.equal(
+      (
+        await req(
+          "/api/factory-reset",
+          post({
+            password: config.ADMIN_PASSWORD,
+            confirmation: "RESET",
+            eraseHistory: false,
+          }),
+        )
+      ).status,
+      401,
+    );
+    assert.equal(
+      (
+        await req(
+          "/api/factory-reset",
+          post(
+            { password: "wrong", confirmation: "RESET", eraseHistory: false },
+            { Cookie: cookie },
+          ),
+        )
+      ).status,
+      403,
+    );
+    assert.equal(store.settings().backlight, false);
+    assert.equal(
+      (
+        await req(
+          "/api/factory-reset",
+          post(
+            { password: config.ADMIN_PASSWORD, confirmation: "no", eraseHistory: true },
+            { Cookie: cookie },
+          ),
+        )
+      ).status,
+      400,
+    );
+    assert.equal(store.resetRevision(), 0);
+    const count = store.history().items.length,
+      revision = store.revision();
+    assert.equal(
+      (
+        await req(
+          "/api/factory-reset",
+          post(
+            {
+              password: config.ADMIN_PASSWORD,
+              confirmation: "RESET",
+              eraseHistory: false,
+            },
+            { Cookie: cookie },
+          ),
+        )
+      ).status,
+      200,
+    );
+    assert.deepEqual(store.settings(), defaults);
+    assert.equal(store.revision(), revision + 1);
+    assert.equal(store.resetRevision(), 1);
+    assert.equal(store.history().items.length, count);
+    assert.ok(store.messages().every((m) => m.cancelled));
+    assert.equal(
+      (
+        await req(
+          "/api/factory-reset",
+          post(
+            {
+              password: config.ADMIN_PASSWORD,
+              confirmation: "RESET",
+              eraseHistory: true,
+            },
+            { Cookie: cookie },
+          ),
+        )
+      ).status,
+      200,
+    );
+    assert.equal(store.resetRevision(), 2);
+    const resetState = await (await req("/api/state", { headers })).json();
+    assert.equal(resetState.resetRevision, 2);
+    assert.equal(store.history().items.length, 0);
+    assert.equal(store.activity().items.length, 1);
+    assert.equal(store.activity().items[0].action, "factory.reset");
+    assert.equal(store.users().length, 1);
+    assert.equal((await req("/api/state", { headers })).status, 200);
     const abort = new AbortController();
     const stream = await req("/api/events", { headers, signal: abort.signal });
     assert.match(stream.headers.get("content-type")!, /^text\/event-stream/);
@@ -165,6 +267,7 @@ test("both partners can manage settings, message history and accounts with priva
       settings: store.settings(),
       frame: render(store.settings(), store.messages()),
       settingsRevision: store.revision(),
+      resetRevision: store.resetRevision(),
       messages: store.messages(),
       serverTime: Date.now(),
       deviceId: "uno-r4",

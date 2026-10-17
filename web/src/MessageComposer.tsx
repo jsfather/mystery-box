@@ -1,16 +1,19 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { LoaderCircle, Send } from "lucide-react";
 export function MessageComposer({
   onSend,
   compact = false,
+  defaultDuration = 120,
 }: {
   onSend: (text: string, duration: number) => Promise<void>;
   compact?: boolean;
+  defaultDuration?: number;
 }) {
   const [text, setText] = useState(""),
-    [duration, setDuration] = useState(15),
+    [duration, setDuration] = useState(defaultDuration),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  useEffect(() => setDuration(defaultDuration), [defaultDuration]);
   return (
     <form
       className="composer"
@@ -56,11 +59,15 @@ export function MessageComposer({
             value={duration}
             onChange={(e) => setDuration(+e.target.value)}
           >
-            {[5, 15, 30, 60, 120, 300].map((v) => (
-              <option key={v} value={v}>
-                {v} seconds
-              </option>
-            ))}
+            {[...new Set([5, 15, 30, 60, 120, 300, defaultDuration])]
+              .sort((a, b) => a - b)
+              .map((v) => (
+                <option key={v} value={v}>
+                  {v < 60
+                    ? `${v} seconds`
+                    : `${v / 60} ${v === 60 ? "minute" : "minutes"}`}
+                </option>
+              ))}
           </select>
         </label>
         <button disabled={busy || !text.trim()} className="primary">

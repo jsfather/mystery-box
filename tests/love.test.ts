@@ -89,3 +89,68 @@ test("alternating display switches every twelve seconds and requires a starting 
     false,
   );
 });
+
+test("scheduled story starts on its interval and ends at the exact configured second", () => {
+  const settings = {
+    ...structuredClone(defaults),
+    displayMode: "scheduled" as const,
+    love: { ...defaults.love, startAt: "2020-01-01T00:00:00Z" },
+  };
+  const boundary = Date.parse("2026-10-17T12:00:00Z");
+  assert.equal(render(settings, [], boundary - 1).love, false);
+  assert.equal(render(settings, [], boundary).love, true);
+  assert.equal(render(settings, [], boundary + 29999).love, true);
+  assert.equal(render(settings, [], boundary + 30000).love, false);
+  assert.equal(render(settings, [], boundary + 600000).love, true);
+  const message = {
+    id: "override",
+    text: "Hello",
+    startsAt: boundary,
+    expiresAt: boundary + 5000,
+    createdAt: boundary,
+    cancelled: false,
+  };
+  assert.equal(render(settings, [message], boundary).love, false);
+  assert.equal(render(settings, [message], boundary + 5000).love, true);
+});
+test("all story formats fit the character display, including long relationships", () => {
+  const settings = {
+    ...structuredClone(defaults),
+    displayMode: "love" as const,
+    love: { ...defaults.love, startAt: "1970-01-01T00:00:00Z" },
+  };
+  for (const format of [
+    "daysClock",
+    "seconds",
+    "days",
+    "weeks",
+    "hours",
+    "rotate",
+  ] as const) {
+    for (const now of [
+      Date.parse("1970-01-01T00:00:01Z"),
+      Date.parse("2099-12-31T23:59:59Z"),
+    ]) {
+      const frame = render({ ...settings, love: { ...settings.love, format } }, [], now);
+      assert.equal(frame.line2.length, 16);
+      assert.ok(Buffer.byteLength(JSON.stringify(frame)) < 768);
+    }
+  }
+  const now = Date.parse("1970-01-15T01:02:03Z");
+  assert.equal(
+    render(
+      { ...settings, love: { ...settings.love, format: "seconds" } },
+      [],
+      now,
+    ).line2.trim(),
+    "1213323 seconds",
+  );
+  assert.equal(
+    render(
+      { ...settings, love: { ...settings.love, format: "weeks" } },
+      [],
+      now,
+    ).line2.trim(),
+    "2w 0d 01:02",
+  );
+});

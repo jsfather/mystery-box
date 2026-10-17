@@ -1,0 +1,32 @@
+# Select this single file in Dokploy's Docker Compose configuration.
+# Reuse Dokploy's Traefik, HTTPS entrypoint and automatic certificate resolver.
+services:
+  app:
+    extends:
+      file: compose.yaml
+      service: app
+    networks:
+      - default
+  broker:
+    extends:
+      file: compose.yaml
+      service: broker
+    networks:
+      - default
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${DOKPLOY_NETWORK:-dokploy-network}"
+      - "traefik.tcp.routers.${MQTT_ROUTER_NAME:-mystery-box-mqtt}.rule=HostSNI(`${MQTT_DOMAIN:?Set MQTT_DOMAIN to a dedicated MQTT hostname}`)"
+      - "traefik.tcp.routers.${MQTT_ROUTER_NAME:-mystery-box-mqtt}.entrypoints=${TRAEFIK_HTTPS_ENTRYPOINT:-websecure}"
+      - "traefik.tcp.routers.${MQTT_ROUTER_NAME:-mystery-box-mqtt}.tls=true"
+      - "traefik.tcp.routers.${MQTT_ROUTER_NAME:-mystery-box-mqtt}.tls.certresolver=${TRAEFIK_CERT_RESOLVER:-letsencrypt}"
+      - "traefik.tcp.routers.${MQTT_ROUTER_NAME:-mystery-box-mqtt}.tls.domains[0].main=${MQTT_DOMAIN:?Set MQTT_DOMAIN to a dedicated MQTT hostname}"
+      - "traefik.tcp.routers.${MQTT_ROUTER_NAME:-mystery-box-mqtt}.service=${MQTT_ROUTER_NAME:-mystery-box-mqtt}"
+      - "traefik.tcp.services.${MQTT_ROUTER_NAME:-mystery-box-mqtt}.loadbalancer.server.port=1883"
+volumes:
+  app-data:
+networks:
+  dokploy-network:
+    external: true
+    name: ${DOKPLOY_NETWORK:-dokploy-network}

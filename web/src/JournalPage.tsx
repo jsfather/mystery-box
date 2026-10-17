@@ -3,204 +3,251 @@ import {
   MessageSquare,
   RefreshCcw,
   Search,
-  Heart,
-  Clock3,
   ChevronDown,
+  Heart,
   NotebookPen,
-  X,
-  Send,
 } from "lucide-react";
-import type { Snapshot, Message, ActivityEntry } from "../../shared/model";
+import type { Snapshot, Message, ActivityEntry, User } from "../../shared/model";
 import { MessageComposer } from "./MessageComposer";
 import { api } from "./api";
 export function MessageHistory({
   snapshot,
   notice,
+  me,
 }: {
   snapshot: Snapshot;
   notice: (s: string) => void;
+  me: User;
 }) {
   const [items, setItems] = useState<Message[]>([]),
     [next, setNext] = useState<number | null>(null),
     [search, setSearch] = useState(""),
     [error, setError] = useState(""),
-    [busy, setBusy] = useState(false);
-  const requestId = useRef(0);
+    [busy, setBusy] = useState(true),
+    [unseen, setUnseen] = useState(false);
+  const requestId = useRef(0),
+    conversation = useRef<HTMLDivElement>(null),
+    nearBottom = useRef(true),
+    initialized = useRef(false),
+    activeSearch = useRef(search);
   const signature = snapshot.messages.map((m) => m.id + Number(m.cancelled)).join(",");
+  const scrollBottom = useCallback(() => {
+    const box = conversation.current;
+    if (box) box.scrollTop = box.scrollHeight;
+    nearBottom.current = true;
+    setUnseen(false);
+  }, []);
   const load = useCallback(
     async (before?: number) => {
       const request = ++requestId.current;
       setBusy(true);
       setError("");
+      const box = conversation.current,
+        previousHeight = box?.scrollHeight ?? 0;
       try {
         const result = await api(
           `messages?q=${encodeURIComponent(search)}${before ? `&before=${before}` : ""}`,
         );
         if (request !== requestId.current) return;
-        setItems((old) => (before ? [...old, ...result.items] : result.items));
+        setItems((old) =>
+          before
+            ? [...result.items, ...old].filter(
+                (m, i, all) => all.findIndex((v) => v.id === m.id) === i,
+              )
+            : result.items,
+        );
         setNext(result.nextCursor);
+        initialized.current = true;
+        requestAnimationFrame(() => {
+          if (before && box) box.scrollTop += box.scrollHeight - previousHeight;
+          else scrollBottom();
+        });
       } catch (e) {
         if (request === requestId.current) setError((e as Error).message);
       } finally {
         if (request === requestId.current) setBusy(false);
       }
     },
-    [search],
+    [search, scrollBottom],
   );
   useEffect(() => {
-    const timer = setTimeout(() => load(), 250);
-    return () => clearTimeout(timer);
-  }, [load, signature]);
+    activeSearch.current = search;
+    initialized.current = false;
+    setBusy(true);
+    const timer = setTimeout(() => load(), 200);
+    return () => {
+      clearTimeout(timer);
+      requestId.current++;
+    };
+  }, [load, search]);
+  useEffect(() => {
+    if (!initialized.current || activeSearch.current !== search) return;
+    const matches = snapshot.messages.filter((m) =>
+      m.text.toLowerCase().includes(search.toLowerCase()),
+    );
+    setItems((old) => {
+      const merged = new Map(old.map((m) => [m.id, m]));
+      for (const m of matches) merged.set(m.id, m);
+      return [...merged.values()];
+    });
+    if (nearBottom.current) requestAnimationFrame(scrollBottom);
+    else setUnseen(true);
+  }, [signature, search, scrollBottom]);
   const formatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: snapshot.settings.timezone,
     dateStyle: "medium",
-    timeStyle: "medium",
+    timeStyle: "short",
   });
+  const ordered = [...items].sort(
+    (a, b) => (a.cursor ?? a.createdAt) - (b.cursor ?? b.createdAt),
+  );
   return (
-    <div className="message-layout">
-      <section className="card message-compose-card">
-        <div className="card-title">
-          <div>
-            <span className="eyebrow">A NOTE, JUST BECAUSE</span>
-            <h2>Put a little love on the screen.</h2>
-          </div>
-          <Heart size={20} />
+    <section className="card conversation-card">
+      <div className="card-title">
+        <div>
+          <span className="eyebrow">YOU, ME, AND OUR LITTLE NOTES</span>
+          <h2>Our conversation</h2>
+          <p className="input-note">
+            Signed in as {me.name}. Every note is saved and queued for our box.
+          </p>
         </div>
-        <MessageComposer
-          onSend={async (text, duration) => {
-            await api("messages", "POST", { text, duration });
-            notice("Your little note is on its way");
-            await load();
-          }}
+        <Heart size={22} />
+      </div>
+      <label className="search-box">
+        <Search size={17} />
+        <input
+          aria-label="Search message history"
+          placeholder="Find something we said…"
+          maxLength={160}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
         />
-        <div className="message-hint">
-          <Heart size={22} />
-          <p>
-            The note may leave the screen.
-            <br />
-            It stays in our story.
-          </p>
-        </div>
-      </section>
-      <section className="card notes-card">
-        <div className="card-title">
-          <div>
-            <span className="eyebrow">WORDS WE GET TO KEEP</span>
-            <h2>Our little notes</h2>
-          </div>
-          <button
-            className="icon-button"
-            aria-label="Refresh message history"
-            onClick={() => load()}
-          >
-            <RefreshCcw size={17} />
-          </button>
-        </div>
-        <label className="search-box">
-          <Search size={17} />
-          <input
-            aria-label="Search message history"
-            placeholder="Find a little note…"
-            maxLength={160}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </label>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
-        <div className="notes-list">
-          {items.map((message) => {
-            const status = message.cancelled
-              ? "Cancelled"
-              : message.expiresAt <= snapshot.serverTime
-                ? "Saved in our story"
-                : message.startsAt > snapshot.serverTime
-                  ? "Waiting for its moment"
-                  : "On the screen · requested";
-            return (
-              <article className="note" key={message.id}>
-                <div className="note-heading">
-                  <span className="note-avatar">
-                    {(message.authorName ?? "Us").slice(0, 1)}
-                  </span>
-                  <div>
-                    <strong>{message.authorName ?? "Before accounts"}</strong>
-                    <time dateTime={new Date(message.createdAt).toISOString()}>
-                      {formatter.format(message.createdAt)}
-                    </time>
-                  </div>
-                  <Heart size={14} />
-                </div>
-                <p>{message.text}</p>
-                <div className="note-footer">
-                  <span>
-                    <Clock3 size={12} />
-                    {status}
-                  </span>
-                  <div>
-                    {!message.cancelled && message.expiresAt > snapshot.serverTime && (
-                      <button
-                        disabled={busy}
-                        aria-label="Cancel message"
-                        onClick={() =>
-                          api(`messages/${message.id}`, "DELETE")
-                            .then(() => load())
-                            .catch((e) => setError(e.message))
-                        }
-                      >
-                        <X size={14} />
-                        Cancel
-                      </button>
-                    )}
-                    <button
-                      disabled={busy}
-                      onClick={() =>
-                        api(`messages/${message.id}/replay`, "POST")
-                          .then(() => {
-                            notice("Sent again, with love");
-                            return load();
-                          })
-                          .catch((e) => setError(e.message))
-                      }
-                    >
-                      <Send size={13} />
-                      Send again
-                    </button>
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-          {!items.length && !busy && (
-            <div className="empty">
-              <MessageSquare size={30} />
-              <h3>The first note is a lovely place to start.</h3>
-              <p>Every message you send is saved here, with its sender.</p>
-            </div>
-          )}
-        </div>
+      </label>
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      <div
+        className="conversation"
+        ref={conversation}
+        role="region"
+        aria-label="Our shared conversation"
+        tabIndex={0}
+        onScroll={() => {
+          const b = conversation.current!;
+          nearBottom.current = b.scrollHeight - b.scrollTop - b.clientHeight < 90;
+          if (nearBottom.current) setUnseen(false);
+        }}
+      >
         {next && (
           <button
-            className="secondary load-more"
+            className="secondary earlier-chat"
             disabled={busy}
             onClick={() => load(next)}
           >
-            <ChevronDown size={15} />
-            Earlier notes
+            Earlier messages
           </button>
         )}
-        <p className="quiet-note">
-          A message window can expire while the box is offline. History records what you
-          sent, not a guarantee it was seen on the LCD.
-        </p>
-      </section>
-    </div>
+        {busy && !ordered.length && (
+          <p className="quiet-note" role="status">
+            Opening our conversation…
+          </p>
+        )}
+        {!ordered.length && !busy && (
+          <div className="empty">
+            <MessageSquare size={30} />
+            <h3>A little hello starts everything.</h3>
+            <p>Your messages appear here with who sent them.</p>
+          </div>
+        )}
+        {ordered.map((message) => {
+          const own = message.authorId === me.id;
+          const status = message.cancelled
+            ? "LCD display cancelled"
+            : message.expiresAt <= snapshot.serverTime
+              ? "Saved · display window ended"
+              : message.startsAt > snapshot.serverTime
+                ? "Queued for our box"
+                : "Display window active";
+          return (
+            <article
+              key={message.id}
+              className={`chat-message ${own ? "own" : "partner"}`}
+            >
+              <div className="chat-avatar" aria-hidden="true">
+                {(message.authorName ?? "Us").slice(0, 1)}
+              </div>
+              <div className="chat-content">
+                <div className="chat-meta">
+                  <strong>
+                    {message.authorName ?? "Before accounts"}
+                    {own ? " · You" : ""}
+                  </strong>
+                  <time dateTime={new Date(message.createdAt).toISOString()}>
+                    {formatter.format(message.createdAt)}
+                  </time>
+                </div>
+                <p className="chat-bubble">{message.text}</p>
+                <div className="chat-delivery">
+                  <span>{status}</span>
+                  <div>
+                    {!message.cancelled && message.expiresAt > snapshot.serverTime && (
+                      <button
+                        aria-label="Cancel LCD display"
+                        onClick={() =>
+                          api(`messages/${message.id}`, "DELETE").catch((e) =>
+                            setError(e.message),
+                          )
+                        }
+                      >
+                        Cancel display
+                      </button>
+                    )}
+                    <button
+                      aria-label={`Show message again: ${message.text}`}
+                      onClick={() =>
+                        api(`messages/${message.id}/replay`, "POST")
+                          .then(() => notice("Message queued for the box again"))
+                          .catch((e) => setError(e.message))
+                      }
+                    >
+                      Show again
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+      {unseen && (
+        <button className="secondary new-messages" onClick={scrollBottom}>
+          Latest messages ↓
+        </button>
+      )}
+      <div className="chat-composer">
+        <MessageComposer
+          compact
+          defaultDuration={snapshot.settings.messaging.defaultDuration}
+          onSend={async (text, duration) => {
+            const saved = await api("messages", "POST", { text, duration });
+            if (search) setSearch("");
+            else setItems((old) => [...old.filter((m) => m.id !== saved.id), saved]);
+            requestAnimationFrame(scrollBottom);
+            notice("Sent to our conversation & queued for the box");
+          }}
+        />
+      </div>
+      <p className="quiet-note">
+        The conversation stays here after a message leaves the LCD. Display windows can
+        expire while the box is offline; an active window does not confirm it was seen.
+      </p>
+    </section>
   );
 }
 const labels: Record<string, string> = {
+  "factory.reset": "Restored factory settings",
   "settings.updated": "Changed our box settings",
   "message.sent": "Sent a little note",
   "message.cancelled": "Cancelled a note",
@@ -218,7 +265,7 @@ const labels: Record<string, string> = {
   "server.started": "Our little world started up",
   "server.stopped": "Our little world shut down",
 };
-export function ActivityPage() {
+export function ActivityPage({ timezone }: { timezone: string }) {
   const [items, setItems] = useState<ActivityEntry[]>([]),
     [next, setNext] = useState<number | null>(null),
     [error, setError] = useState(""),
@@ -282,7 +329,9 @@ export function ActivityPage() {
                 {entry.details.passwordChanged ? " · password changed" : ""}
               </p>
               <time dateTime={new Date(entry.createdAt).toISOString()}>
-                {new Date(entry.createdAt).toLocaleString()}
+                {new Date(entry.createdAt).toLocaleString("en-GB", {
+                  timeZone: timezone,
+                })}
               </time>
             </div>
           </article>

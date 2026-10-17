@@ -55,3 +55,42 @@ export function momentFromWall(
     );
   return new Date(matches[occurrence === "later" ? matches.length - 1 : 0]).toISOString();
 }
+
+export const loveFormats = {
+  daysClock: "Days, hours, minutes & seconds",
+  seconds: "Every second · total seconds",
+  days: "Days together · total days",
+  weeks: "Weeks & days together",
+  hours: "Hours together · total hours",
+  rotate: "A little of everything · rotate every 10 seconds",
+} as const;
+export function loveLine(startAt: string, now: number, format: keyof typeof loveFormats) {
+  const e = elapsedLove(startAt, now);
+  const pad = (v: number) => String(v).padStart(2, "0");
+  if (format === "rotate")
+    format = (["daysClock", "seconds", "weeks", "hours"] as const)[
+      Math.floor(now / 10000) % 4
+    ];
+  switch (format) {
+    case "seconds":
+      return `${e.total} seconds`.length <= 16 ? `${e.total} seconds` : `${e.total}s`;
+    case "days":
+      return `${e.days} days of us`;
+    case "weeks":
+      return `${Math.floor(e.days / 7)}w ${e.days % 7}d ${pad(e.hours)}:${pad(e.minutes)}`;
+    case "hours":
+      return `${Math.floor(e.total / 3600)}h ${pad(e.minutes)}m ${pad(e.seconds)}s`;
+    default:
+      return `${e.days}d ${pad(e.hours)}:${pad(e.minutes)}:${pad(e.seconds)}`;
+  }
+}
+export function storyVisible(s: import("./model.js").Settings, now: number) {
+  if (!s.love.startAt) return false;
+  if (s.displayMode === "love") return true;
+  if (s.displayMode === "alternate") return Math.floor(now / 12000) % 2 === 1;
+  // Fixed UTC intervals avoid daylight saving shifts; messages temporarily override.
+  return (
+    s.displayMode === "scheduled" &&
+    (now / 1000) % (s.schedule.everyMinutes * 60) < s.schedule.durationSeconds
+  );
+}

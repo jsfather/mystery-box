@@ -49,6 +49,9 @@ import { MessageHistory, ActivityPage } from "./JournalPage";
 import { InstallApp, registerPwa } from "./pwa";
 import "./style.css";
 import "./love.css";
+import "./theme.css";
+import { TimezoneSelect } from "./TimezoneSelect";
+import { Preferences, ThemeSelect } from "./Preferences";
 type Page =
   | "overview"
   | "clock"
@@ -57,8 +60,10 @@ type Page =
   | "device"
   | "love"
   | "people"
-  | "activity";
+  | "activity"
+  | "preferences";
 const pageInfo: Record<Page, [string, string]> = {
+  preferences: ["Preferences", "A few little details, just the way we like them."],
   overview: [
     "Our little world",
     "A little love, a little light. A place that’s just ours.",
@@ -135,6 +140,10 @@ function App() {
   }, [auth]);
   useEffect(() => {
     window.scrollTo(0, 0);
+    if (window.matchMedia("(max-width: 640px)").matches)
+      document
+        .querySelector('nav [aria-current="page"]')
+        ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [page]);
   function notice(text: string) {
     setToast(text);
@@ -240,6 +249,7 @@ function App() {
               </>
             )}
           </button>
+          <ThemeSelect />
           <small>Just you, me, and all the seconds in between.</small>
         </form>
       </div>
@@ -271,10 +281,12 @@ function App() {
               ["device", Radio, "Connection"],
               ["people", UsersRound, "You & me"],
               ["activity", NotebookPen, "Our journal"],
+              ["preferences", Settings2, "Preferences"],
             ] as const
           ).map(([id, Icon, label]) => (
             <button
               key={id}
+              aria-current={page === id ? "page" : undefined}
               onClick={() => setPage(id)}
               className={page === id ? "active" : ""}
             >
@@ -318,6 +330,7 @@ function App() {
             <strong>{pageInfo[page][0]}</strong>
           </div>
           <div className="top-status">
+            <ThemeSelect />
             <span className={"status-dot " + (live ? "" : "muted")} />
             {live ? "Live connection" : "Reconnecting…"}
             <span className="avatar" title={me?.name}>
@@ -366,60 +379,9 @@ function App() {
               <p>Connecting to your server…</p>
             </div>
           ) : (
-            <>
+            <React.Fragment key={s.resetRevision}>
               {page === "overview" && (
                 <>
-                  <LoveHero snapshot={s} onSetup={() => setPage("love")} />
-                  <div className="stats">
-                    <Stat
-                      icon={<Clock3 />}
-                      label="LOCAL TIME"
-                      value={new Intl.DateTimeFormat("en-GB", {
-                        timeZone: s.settings.timezone,
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                        hourCycle: "h23",
-                      }).format(s.serverTime)}
-                      sub={s.settings.timezone.replaceAll("_", " ").replace("/", " / ")}
-                    />
-                    <Stat
-                      icon={<Activity />}
-                      label="DEVICE STATUS"
-                      value={s.device.online ? "Connected" : "Waiting for device"}
-                      sub={
-                        s.device.online
-                          ? `${s.device.rssi ?? "—"} dBm · MQTT stream active`
-                          : "Your preview is live on the server"
-                      }
-                      status={s.device.online}
-                    />
-                    <Stat
-                      icon={<MessageSquare />}
-                      label="MESSAGE QUEUE"
-                      value={String(
-                        s.messages.filter(
-                          (m) => !m.cancelled && m.expiresAt > s.serverTime,
-                        ).length,
-                      ).padStart(2, "0")}
-                      sub="Ready for a little conversation"
-                    />
-                    <Stat
-                      icon={<Grid3X3 />}
-                      label="MATRIX MODE"
-                      value={
-                        s.settings.matrix.mode === "off"
-                          ? "Off"
-                          : s.settings.matrix.mode === "custom"
-                            ? "Custom animation"
-                            : s.settings.matrix.mode === "text"
-                              ? "Scrolling text"
-                              : s.settings.matrix.mode[0].toUpperCase() +
-                                s.settings.matrix.mode.slice(1)
-                      }
-                      sub="12 × 8 pixels of possibility"
-                    />
-                  </div>
                   <div className="overview-grid">
                     <section className="card display-card">
                       <CardTitle
@@ -499,6 +461,7 @@ function App() {
                         right={<MessageSquare size={19} />}
                       />
                       <MessageComposer
+                        defaultDuration={s.settings.messaging.defaultDuration}
                         onSend={async (text, duration) => {
                           await api("messages", "POST", { text, duration });
                           notice("Message queued");
@@ -532,6 +495,33 @@ function App() {
                           }
                         />
                       </div>
+                      <div className="quick-mode">
+                        <label htmlFor="quick-mode">What should our box show?</label>
+                        <select
+                          id="quick-mode"
+                          value={s.settings.displayMode}
+                          onChange={(e) =>
+                            save({
+                              ...s.settings,
+                              displayMode: e.target.value as Settings["displayMode"],
+                            }).catch(() => {})
+                          }
+                        >
+                          <option value="clock">Date & time</option>
+                          <option value="love" disabled={!s.settings.love.startAt}>
+                            Our time together
+                          </option>
+                          <option value="alternate" disabled={!s.settings.love.startAt}>
+                            Clock & story · every 12 seconds
+                          </option>
+                          <option value="scheduled" disabled={!s.settings.love.startAt}>
+                            Clock & scheduled story moments
+                          </option>
+                        </select>
+                        <button onClick={() => setPage("love")}>
+                          Edit story schedule & format <ArrowUpRight size={14} />
+                        </button>
+                      </div>
                       <div className="quick-row">
                         <span className="mini-icon">
                           <Clock3 size={18} />
@@ -557,6 +547,59 @@ function App() {
                       </p>
                     </section>
                   </div>
+                  <div className="stats">
+                    <Stat
+                      icon={<Clock3 />}
+                      label="LOCAL TIME"
+                      value={new Intl.DateTimeFormat("en-GB", {
+                        timeZone: s.settings.timezone,
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                        hourCycle: "h23",
+                      }).format(s.serverTime)}
+                      sub={s.settings.timezone.replaceAll("_", " ").replace("/", " / ")}
+                    />
+                    <Stat
+                      icon={<Activity />}
+                      label="DEVICE STATUS"
+                      value={s.device.online ? "Connected" : "Waiting for device"}
+                      sub={
+                        s.device.online
+                          ? `${s.device.rssi ?? "—"} dBm · MQTT stream active`
+                          : "Your preview is live on the server"
+                      }
+                      status={s.device.online}
+                    />
+                    <Stat
+                      icon={<MessageSquare />}
+                      label="MESSAGE QUEUE"
+                      value={String(
+                        s.messages.filter(
+                          (m) => !m.cancelled && m.expiresAt > s.serverTime,
+                        ).length,
+                      ).padStart(2, "0")}
+                      sub="Ready for a little conversation"
+                    />
+                    <Stat
+                      icon={<Grid3X3 />}
+                      label="MATRIX MODE"
+                      value={
+                        s.settings.matrix.mode === "off"
+                          ? "Off"
+                          : s.settings.matrix.mode === "custom"
+                            ? "Custom animation"
+                            : s.settings.matrix.mode === "text"
+                              ? "Scrolling text"
+                              : s.settings.matrix.mode[0].toUpperCase() +
+                                s.settings.matrix.mode.slice(1)
+                      }
+                      sub="12 × 8 pixels of possibility"
+                    />
+                  </div>
+                  <div className="overview-story">
+                    <LoveHero snapshot={s} onSetup={() => setPage("love")} />
+                  </div>
                   <div className="bottom-note">
                     <span>THOUGHTFULLY CONNECTED</span>
                     <p>Server does the thinking. Your Arduino brings it to life.</p>
@@ -572,10 +615,15 @@ function App() {
                   frame={s.frame}
                 />
               )}
-              {page === "messages" && <MessageHistory snapshot={s} notice={notice} />}
+              {page === "messages" && (
+                <MessageHistory snapshot={s} notice={notice} me={me!} />
+              )}
               {page === "love" && <LovePage snapshot={s} save={save} />}
               {page === "people" && me && <PeoplePage me={me} onMeChange={setMe} />}
-              {page === "activity" && <ActivityPage />}
+              {page === "activity" && <ActivityPage timezone={s.settings.timezone} />}
+              {page === "preferences" && (
+                <Preferences snapshot={s} save={save} notice={notice} />
+              )}
               {page === "matrix" && (
                 <MatrixStudio
                   settings={s.settings}
@@ -602,7 +650,9 @@ function App() {
                       <dt>Last heartbeat</dt>
                       <dd>
                         {s.device.lastSeen
-                          ? new Date(s.device.lastSeen).toLocaleString()
+                          ? new Date(s.device.lastSeen).toLocaleString("en-GB", {
+                              timeZone: s.settings.timezone,
+                            })
                           : "Waiting for first connection"}
                       </dd>
                       <dt>Wi-Fi signal</dt>
@@ -655,7 +705,7 @@ function App() {
                   </section>
                 </div>
               )}
-            </>
+            </React.Fragment>
           )}
           <InstallApp />
           <footer>
@@ -808,7 +858,6 @@ function ClockSettings({
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const baseline = useRef(revision);
-  const zones = Intl.supportedValuesOf("timeZone");
   return (
     <div className="detail-grid">
       <form
@@ -828,17 +877,11 @@ function ClockSettings({
       >
         <CardTitle eyebrow="SET YOUR RHYTHM" title="Time & calendar" />
         <label htmlFor="timezone">Timezone</label>
-        <input
+        <TimezoneSelect
           id="timezone"
-          list="timezones"
           value={draft.timezone}
-          onChange={(e) => setDraft({ ...draft, timezone: e.target.value })}
+          onChange={(timezone) => setDraft({ ...draft, timezone })}
         />
-        <datalist id="timezones">
-          {["UTC", ...zones].map((z) => (
-            <option key={z} value={z} />
-          ))}
-        </datalist>
         <p className="input-note">
           IANA timezones automatically follow daylight saving changes.
         </p>
