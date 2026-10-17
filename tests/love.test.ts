@@ -7,8 +7,22 @@ import {
   wallTime,
   calendarLove,
   loveLine,
+  rotatingLoveFormats,
 } from "../shared/love.js";
 import { render } from "../server/render.js";
+test("rotation includes every counter including calendar years/months/days", () => {
+  const start = "2023-10-01T00:18:00+03:30";
+  const now = Math.floor(Date.parse("2026-10-17T00:18:00+03:30") / 60000) * 60000;
+  assert.equal(rotatingLoveFormats.length, 6);
+  for (let i = 0; i < 6; ++i) {
+    const at = now + i * 10000;
+    assert.equal(
+      loveLine(start, at, "rotate", "Asia/Tehran"),
+      loveLine(start, at, rotatingLoveFormats[i], "Asia/Tehran"),
+    );
+  }
+  assert.equal(loveLine(start, now + 10000, "rotate", "Asia/Tehran"), "3y 0m 16d");
+});
 test("love counter counts the precise second across days and leap day", () => {
   const start = "2024-02-28T23:59:59Z",
     now = Date.parse("2024-03-01T01:02:03Z");

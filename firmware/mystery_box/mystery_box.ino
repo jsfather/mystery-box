@@ -13,6 +13,8 @@
 #include <RTC.h>
 #include "arduino_secrets.h"
 #include "calendar_counter.h"
+#include "steady_clock.h"
+#include "heartbeat.h"
 
 #if MQTT_TLS
 WiFiSSLClient transport;
@@ -25,8 +27,15 @@ ArduinoLEDMatrix matrix;
 const char FRAME_TOPIC[] = "mystery-box/" DEVICE_ID "/frame";
 const char STATUS_TOPIC[] = "mystery-box/" DEVICE_ID "/status";
 const char HELLO_TOPIC[] = "mystery-box/" DEVICE_ID "/hello";
-uint32_t lastFrameAt = 0, lastSyncAt = 0, lastTelemetryAt = 0;
-uint32_t nextAttempt = 0, retryMs = 1000, lastSeq = 0, lastOfflineDraw = 0;
+uint32_t lastFrameAt = 0, lastTelemetryAt = 0;
+uint32_t nextAttempt = 0, retryMs = 1000, lastSeq = 0, lastLocalDraw = 0;
+uint32_t lastWifiCheck = 0, lastMqttPoll = 0;
+uint64_t newestFrameMs = 0;
+SteadyClock displayClock;
+bool localClock = false, localLove = false, clockTop = false, localHeart = false;
+bool wifiConnected = false;
+uint8_t heartSpeed = 5, heartPhase = 255;
+uint32_t lastDrawSecond = 0, lastTickAt = 0, tickMin = UINT32_MAX, tickMax = 0;
 int32_t utcOffset = 0, cachedDateKey = 0;
 bool synced = false, lcdReady = false, lightOn = true;
 bool hour12 = false, showSeconds = true, loveEnabled = false;
@@ -101,17 +110,21 @@ void received(char* topic, byte* payload, unsigned int length) {
   if (epoch < 1700000000UL || epoch > 4102444800UL ||
       offset < -50400 || offset > 50400) return;
 
-  if (!synced || now - lastSyncAt >= 60000UL) {
-    RTCTime t((time_t)epoch);
-    if (RTC.setTime(t)) {
-      lastSyncAt = now;
-      synced = true;
-    }
-  }
   const char* title = doc["loveTitle"] | "YOU & ME <3";
   if (strlen(title) < 1 || strlen(title) > 16) return;
   for (size_t i = 0; i < strlen(title); i++) {
     if (title[i] < 32 || title[i] > 126) return;
+  }
+  const uint16_t fraction = doc["ms"] | 0;
+  if (fraction > 999) return;
+  const uint64_t frameMs = (uint64_t)epoch * 1000 + fraction;
+  if (frameMs < newestFrameMs) return;
+  newestFrameMs = frameMs;
+  displayClock.sample(frameMs, now);
+  if (!synced) {
+    RTCTime t((time_t)epoch);
+    RTC.setTime(t);
+    synced = true;
   }
   loveEnabled = (doc["loveEnabled"] | false) && doc["loveSince"].is<uint32_t>();
   loveSince = doc["loveSince"] | 0UL;
@@ -126,7 +139,15 @@ void received(char* topic, byte* payload, unsigned int length) {
   utcOffset = offset;
   hour12 = doc["hour12"] | false;
   showSeconds = doc["seconds"] | true;
-  if (doc["clock"] | false) {
+  localClock = doc["clock"] | false;
+  localLove = doc["love"] | false;
+  clockTop = doc["clockTop"] | false;
+  const bool wasHeart = localHeart;
+  localHeart = doc["heart"] | false;
+  heartSpeed = doc["heartSpeed"] | 5;
+  if (heartSpeed < 1 || heartSpeed > 10) heartSpeed = 5;
+  if (localHeart != wasHeart) heartPhase = 255;
+  if (localClock) {
     memcpy(cachedDate, b, 17);
     cachedDateKey = doc["dateKey"].as<int32_t>();
   }
@@ -138,12 +159,17 @@ void received(char* topic, byte* payload, unsigned int length) {
       else lcd.noBacklight();
     }
   }
-  row(0, a);
-  row(1, b);
-  for (uint8_t i = 0; i < 96; i++) {
-    pixels[i / 12][i % 12] = (hexValue(hex[i / 4]) >> (3 - i % 4)) & 1;
+  if (!localClock && !localLove) {
+    if (!clockTop) row(0, a);
+    row(1, b);
   }
-  matrix.renderBitmap(pixels, 8, 12);
+  if (!localHeart) {
+    for (uint8_t i = 0; i < 96; i++) {
+      pixels[i / 12][i % 12] = (hexValue(hex[i / 4]) >> (3 - i % 4)) & 1;
+    }
+    matrix.renderBitmap(pixels, 8, 12);
+  }
+  if (lastFrameAt == 0) Serial.println("First display frame received");
   lastSeq = doc["seq"] | 0UL;
   lastFrameAt = now;
 }
@@ -153,31 +179,37 @@ void telemetry() {
   doc["online"] = true;
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
-  doc["firmware"] = "1.1.0";
+  doc["firmware"] = "1.2.0";
   doc["seq"] = lastSeq;
   char buffer[224];
   serializeJson(doc, buffer, sizeof(buffer));
   mqtt.publish(STATUS_TOPIC, buffer, false);
+  Serial.print("Heartbeat; last frame sequence: ");
+  Serial.println(lastSeq);
+  if (tickMax > 0) {
+    Serial.print("Local second intervals (ms): ");
+    Serial.print(tickMin);
+    Serial.print(" - ");
+    Serial.println(tickMax);
+    tickMin = UINT32_MAX;
+    tickMax = 0;
+  }
   lastTelemetryAt = millis();
 }
 
-void offlineClock() {
-  if (!synced) return;
-  RTCTime t;
-  if (!RTC.getTime(t)) return;
-  const int64_t utc = (int64_t)t.getUnixTime();
-  if (loveEnabled) {
+void drawClock(int64_t utc, bool offline, bool story) {
+  if (story) {
     const uint32_t elapsed = utc > loveSince ? (uint32_t)(utc - loveSince) : 0;
     char dedication[17], counter[17];
     memset(dedication, ' ', 16);
     dedication[16] = '\0';
     const size_t n = strlen(loveTitle);
     memcpy(dedication + (16 - n) / 2, loveTitle, n);
-    dedication[15] = '*';
+    if (offline) dedication[15] = '*';
     uint8_t format = loveFormat;
     if (format == 5) {
-      const uint8_t formats[] = {0, 1, 3, 4};
-      format = formats[(utc / 10) % 4];
+      const uint8_t formats[] = {0, 6, 1, 2, 3, 4};
+      format = formats[(utc / 10) % 6];
     }
     const unsigned long days = elapsed / 86400UL;
     const unsigned int h = (elapsed / 3600UL) % 24;
@@ -210,14 +242,41 @@ void offlineClock() {
   }
   snprintf(text, sizeof(text), "%s%s", clockText, hour12 ? (h < 12 ? " AM" : " PM") : "");
   centered(0, text);
+  if (!offline && clockTop) return; // Keep the message on the bottom row.
   // Calendar rules belong to the server. Never display yesterday's cached date.
   if (local / 86400 == cachedDateKey) {
     char date[17];
     memcpy(date, cachedDate, 17);
-    date[15] = '*';
+    if (offline) date[15] = '*';
     row(1, date);
   } else {
     centered(1, "Date needs sync");
+  }
+}
+
+void drawLocal(uint32_t now) {
+  if (!synced) return;
+  const uint64_t timeMs = displayClock.now(now);
+  const uint32_t second = timeMs / 1000;
+  if (second != lastDrawSecond) {
+    if (lastTickAt != 0) {
+      const uint32_t interval = now - lastTickAt;
+      if (interval < tickMin) tickMin = interval;
+      if (interval > tickMax) tickMax = interval;
+    }
+    lastTickAt = now;
+    lastDrawSecond = second;
+  }
+  const bool offline = now - lastFrameAt > 3000UL;
+  if (localClock || localLove || clockTop || offline)
+    drawClock(timeMs / 1000, offline, offline ? loveEnabled : localLove);
+  if (localHeart) {
+    const uint8_t phase = Heartbeat::stage(timeMs, heartSpeed);
+    if (phase != heartPhase) {
+      Heartbeat::draw(pixels, phase);
+      matrix.renderBitmap(pixels, 8, 12);
+      heartPhase = phase;
+    }
   }
 }
 
@@ -250,29 +309,41 @@ void setup() {
 
 void loop() {
   const uint32_t now = millis();
-  if (synced && now - lastFrameAt > 3000UL && now - lastOfflineDraw >= 200UL) {
-    offlineClock();
-    lastOfflineDraw = now;
+  if (now - lastLocalDraw >= 20UL) {
+    drawLocal(now);
+    lastLocalDraw = now;
   }
-  if (WiFi.status() != WL_CONNECTED) {
+  if (lastWifiCheck == 0 || now - lastWifiCheck >= 1000UL) {
+    wifiConnected = WiFi.status() == WL_CONNECTED;
+    lastWifiCheck = now;
+  }
+  if (!wifiConnected) {
     if (mqtt.connected()) mqtt.disconnect();
     if (due(now, nextAttempt)) {
       Serial.println("Connecting Wi-Fi");
-      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+      wifiConnected = WiFi.begin(WIFI_SSID, WIFI_PASSWORD) == WL_CONNECTED;
       scheduleRetry();
     }
     return;
   }
+  if (now - lastMqttPoll < 20UL) return;
+  lastMqttPoll = now;
   if (!mqtt.connected()) {
     if (due(now, nextAttempt)) {
       Serial.println("Connecting MQTT");
       if (mqtt.connect("mb-" DEVICE_ID, MQTT_USERNAME, MQTT_PASSWORD,
                        STATUS_TOPIC, 1, true, "{\"online\":false}")) {
+        Serial.println("Wi-Fi and MQTT connected");
+        Serial.print("Connectivity firmware: ");
+        Serial.println(WiFi.firmwareVersion());
+        Serial.println(lcdReady ? "LCD ready" : "LCD not found");
         mqtt.subscribe(FRAME_TOPIC, 0);
         mqtt.publish(HELLO_TOPIC, "{}", false);
         telemetry();
         retryMs = 1000;
       } else {
+        Serial.print("MQTT connection failed; state: ");
+        Serial.println(mqtt.state());
         scheduleRetry();
       }
     }

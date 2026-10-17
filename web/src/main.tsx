@@ -52,6 +52,7 @@ import "./theme.css";
 import { TimezoneSelect } from "./TimezoneSelect";
 import { HeaderConnection, AppearanceButton } from "./HeaderControls";
 import { Preferences, ThemeControl } from "./Preferences";
+import { useLiveSnapshot } from "./useLiveSnapshot";
 type Page =
   | "overview"
   | "clock"
@@ -83,10 +84,11 @@ function App() {
     [password, setPassword] = useState(""),
     [loginError, setLoginError] = useState(""),
     [busy, setBusy] = useState(false);
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null),
+  const [receivedSnapshot, setSnapshot] = useState<Snapshot | null>(null),
     [live, setLive] = useState(false),
     [page, setPage] = useState<Page>("overview"),
     [toast, setToast] = useState("");
+  const snapshot = useLiveSnapshot(receivedSnapshot);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     api("session")
@@ -969,7 +971,7 @@ function ClockSettings({
         <p className="quiet-note">
           <Clock3 size={16} />
           Time comes from your server’s system clock. Keep the host synchronized with NTP.
-          During outages, the Arduino continues from its last RTC synchronization.
+          The Arduino keeps ticking locally between updates and during outages.
         </p>
       </section>
     </div>

@@ -77,7 +77,7 @@ client.on("error", () => {
 client.on("message", (topic, payload, packet) => {
   if (payload.length > 1024) return;
   if (topic === `${base}/hello`) {
-    if (!packet.retain && client.connected) publish();
+    if (!packet.retain && client.connected) publish(true);
     return;
   }
   try {
@@ -95,8 +95,15 @@ client.on("message", (topic, payload, packet) => {
     /* Ignore invalid device telemetry. */
   }
 });
-function publish() {
+let lastPublishedAt = 0;
+function publish(force = false) {
   frame = render(settings, messages, Date.now(), (seq = (seq + 1) >>> 0));
+  // Clock/counter ticks and heart pulses run on the device. Avoid filling its
+  // serial Wi-Fi bridge with redundant frames; keep scrolling/other effects at 5fps.
+  const dynamic =
+    !["off", "heart"].includes(settings.matrix.mode) || (!frame.clock && !frame.love);
+  if (!force && !dynamic && Date.now() - lastPublishedAt < 1000) return;
+  lastPublishedAt = Date.now();
   if (client.connected)
     client.publish(`${base}/frame`, JSON.stringify(frame), {
       qos: 0,
@@ -133,7 +140,7 @@ const app = createApp(config, store, {
   changed: () => {
     settings = store.settings();
     messages = store.messages();
-    publish();
+    publish(true);
     for (const fn of listeners) fn();
   },
   listen: (fn) => {

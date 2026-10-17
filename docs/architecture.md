@@ -9,7 +9,7 @@ flowchart LR
     Browser[Control room] -->|Authenticated HTTP| App[Node server]
     App -->|SSE preview| Browser
     App --> DB[(SQLite)]
-    App -->|Current display frame / 5 Hz| Broker[Mosquitto]
+    App -->|Display state / 1–5 Hz| Broker[Mosquitto]
     Broker <-->|Private MQTT / 1883| Proxy[Dokploy Traefik]
     Proxy <-->|MQTT TLS / 443| Uno[UNO R4 WiFi]
     Uno -->|Heartbeat and last frame| Broker
@@ -21,13 +21,13 @@ flowchart LR
 
 The UNO R4 has a Renesas RA4M1 (48 MHz, 32 KB SRAM), a Wi-Fi coprocessor, an RTC and a built-in matrix. It can handle cooperative tasks; lack of application threads does not require every pixel to be streamed. A typical embedded alternative would send settings once and render animations locally. Here the requested server-centric approach makes firmware simpler and keeps calendar/font/message logic editable without flashing it.
 
-This trades offline animation and bandwidth for central control. The display stream is capped at 5 frames/s, roughly a few KB/s including protocol overhead. It is appropriate for this 96-pixel matrix and character LCD, not a video display.
+Clock/counter ticks and the heartbeat animation run locally on a monotonic timeline. Quiet clock/heart states are sent once per second; messages and other effects remain capped at 5 frames/s. Settings changes and device hello force an immediate update. The heartbeat uses three intact, centered heart sizes with a strong pulse, a softer pulse and a longer rest (56–110 BPM).
 
 ### Why MQTT
 
 - One outbound connection from the device; no inbound router ports or polling TLS handshakes on the Arduino.
 - Small payloads, topic ACLs and heartbeat/last-will support.
-- QoS 0 frames are intentionally disposable: the next complete state repairs a dropped frame within ~200ms while connected. Never retransmit a long backlog of stale animation.
+- QoS 0 frames are intentionally disposable: the next complete state repairs a dropped frame within about one second while connected. Never retransmit a long backlog of stale animation.
 - Commands become durable server settings or scheduled messages, not retained imperative commands.
 
 HTTPS polling is easy to deploy but repeated handshakes and response latency are less suitable for streamed animations. WebSockets could work, but MQTT gives this small device a standard client, broker ACLs and liveness semantics. Native MQTT TLS shares Dokploy’s existing port 443 using a dedicated hostname and Traefik TCP/SNI routing. Dokploy’s existing ACME resolver automatically issues and renews that hostname’s certificate; the broker does not load certificate files.
@@ -63,7 +63,7 @@ Example frame (the epoch/date key below are illustrative):
 }
 ```
 
-Both LCD rows are exactly 16 printable ASCII bytes; short content is centered. Firmware rejects oversized/invalid rows and matrix payloads. Actual serialized frames are comfortably below the 768-byte firmware payload limit and 1024-byte MQTT packet buffer. `epoch` is UTC seconds; `offset` is the selected timezone’s UTC offset **at that instant**, computed using ICU/IANA rules. No dependency on the Docker host’s timezone. `dateKey = floor((epoch + offset) / 86400)` identifies the local calendar day for offline date freshness.
+Both LCD rows are exactly 16 printable ASCII bytes; short content is centered. Firmware rejects oversized/invalid rows and matrix payloads. Actual serialized frames are comfortably below the 768-byte firmware payload limit and 1024-byte MQTT packet buffer. `epoch` is UTC seconds and `ms` is its fractional millisecond (0–999); `clockTop` keeps a local clock above a message, and `heart`/`heartSpeed` enable local pulses. `offset` is the selected timezone’s UTC offset **at that instant**, computed using ICU/IANA rules. No dependency on the Docker host’s timezone. `dateKey = floor((epoch + offset) / 86400)` identifies the local calendar day for offline date freshness.
 
 The matrix is **24 hex characters = 96 bits**, in row-major order (8 rows × 12 columns). The most significant bit of each nibble is the first pixel. `800000000000000000000001` lights the top-left and bottom-right pixels. The device expands this into `uint8_t[8][12]` and calls `matrix.renderBitmap` so it does not depend on internal LED wiring order.
 
@@ -81,9 +81,9 @@ A fresh telemetry message is required for online status. A retained `online:true
 
 Firmware uses `millis()`-based deadlines, with no `delay()` or blocking retry loops. WiFiS3 connect operations and TLS handshakes are synchronous library calls and **can briefly block**; timeout/backoff reduce disruption but cannot provide hard realtime guarantees. The RTC and hardware LED refresh run independently of the application’s busy loop. Retries back off from 1 to 30 seconds. If a network stack blocks, the previously rendered display remains visible.
 
-The RTC is synchronized on the first valid frame and every 60 seconds. Online LCD content is server-rendered. After three seconds without a valid frame, firmware resumes its local RTC clock (or elapsed love timer when enabled), preserves the backlight setting and freezes the matrix on its last frame. A message is abandoned on loss of stream so it cannot stay on screen indefinitely. The last clock date is shown with `*` while still on the same local day. After midnight without the server, it says **Date needs sync**; it does not pretend to compute a new Jalali date. UTC offset/DST rules are cached until reconnection, so a DST transition during an outage cannot be corrected locally.
+The first frame anchors a monotonic clock. Samples every 60 seconds correct drift by at most 2%, without stepping time backwards or replaying buffered seconds. Clock and love-counter rows are drawn locally online and offline; incoming frames select the mode and update calendar metadata. The browser preview uses the same paced clock. After three seconds without a valid frame, the local fallback clock (or love timer when enabled) replaces messages, preserves the backlight and continues heart pulses. Other matrix modes freeze on their last frame. A message is abandoned on loss of stream so it cannot stay on screen indefinitely. The last clock date is shown with `*` while still on the same local day. After midnight without the server, it says **Date needs sync**; it does not pretend to compute a new Jalali date. UTC offset/DST rules are cached until reconnection, so a DST transition during an outage cannot be corrected locally.
 
-The onboard RTC runs while powered. No backup battery is included in the user’s hardware list: after a full power loss the device waits for a new server synchronization. RTC accuracy depends on the board oscillator; this is a desk clock, not a precision time instrument. Network delay is not compensated, so online/offline synchronization accuracy is approximately one second plus network latency.
+The onboard RTC runs while powered. No backup battery is included in the user’s hardware list: after a full power loss the device waits for a new server synchronization. RTC accuracy depends on the board oscillator; this is a desk clock, not a precision time instrument. Initial network delay is not compensated; precision is limited by that delay and the board oscillator. Synchronous Wi-Fi/TLS operations can still delay an application redraw during reconnection.
 
 Messages are scheduled in FIFO windows, each 5–300 seconds (default 120 seconds, configurable in `messaging.defaultDuration`). `messaging.mode` selects `full` (two rows, or header plus scrolling text) or `clock` (live clock above a centered/scrolling message). Windows are wall-clock server times persisted in SQLite. Offline devices miss elapsed windows. Cancelling ends an active message on the next frame but does not reflow later windows. There is no “guaranteed delivery” queue; this avoids showing yesterday’s message after reconnecting.
 
@@ -140,3 +140,5 @@ The PWA service worker precaches a versioned list of static build assets and an 
 `displayMode` accepts `clock`, `love`, `alternate` (12-second intervals), and `scheduled`. Scheduled story windows begin at fixed UTC interval boundaries: `(epochSeconds % (schedule.everyMinutes * 60)) < schedule.durationSeconds`. The validated duration is shorter than the interval. Messages override the selected scene without shifting its schedule. `love.format` chooses days/time, seconds, days, weeks, hours or a 10-second rotating counter. Duration counters use exact elapsed seconds. `yearsMonthsDays` uses complete Gregorian months with month-end clamping, followed by complete wall-clock days in `love.timezone`. Frame fields `loveStartWall` and `loveOffset` provide the saved starting wall time and current timezone offset for firmware calendar fallback. Offline timezone offsets remain at their last synchronized values. Existing settings acquire schema defaults on read without discarding saved data. Factory resets atomically increment a persistent `resetRevision` in snapshots; open clients remount their page so old forms, conversations and journal entries do not remain visible after a reset.
 
 Application theme is per-browser (`mb-theme`: `system`, `light`, `dark`). An external, CSP-compatible startup script applies it before the app paints, follows `prefers-color-scheme`, and synchronizes local tabs. The script is included in the versioned static PWA cache. Chat and API data remain uncached. The server keeps all settings shared between the two owners; light/dark preference does not change device backlight.
+
+The rotating story counter cycles every ten seconds through days/time, years/months/days, total seconds, total days, weeks/days and total hours. Calendar counts use the saved story timezone and clamp month-end anniversaries to shorter months.

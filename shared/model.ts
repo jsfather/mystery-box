@@ -154,12 +154,16 @@ export interface Frame {
   v: 1;
   seq: number;
   epoch: number;
+  ms: number;
   offset: number;
   line1: string;
   line2: string;
   backlight: boolean;
   matrix: string;
   clock: boolean;
+  clockTop: boolean;
+  heart: boolean;
+  heartSpeed: number;
   hour12: boolean;
   seconds: boolean;
   dateKey: number;

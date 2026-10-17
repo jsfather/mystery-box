@@ -96,6 +96,14 @@ export const loveFormats = {
   hours: "Hours together · total hours",
   rotate: "A little of everything · rotate every 10 seconds",
 } as const;
+export const rotatingLoveFormats = [
+  "daysClock",
+  "yearsMonthsDays",
+  "seconds",
+  "days",
+  "weeks",
+  "hours",
+] as const;
 export function loveLine(
   startAt: string,
   now: number,
@@ -105,9 +113,7 @@ export function loveLine(
   const e = elapsedLove(startAt, now);
   const pad = (v: number) => String(v).padStart(2, "0");
   if (format === "rotate")
-    format = (["daysClock", "seconds", "weeks", "hours"] as const)[
-      Math.floor(now / 10000) % 4
-    ];
+    format = rotatingLoveFormats[Math.floor(now / 10000) % rotatingLoveFormats.length];
   switch (format) {
     case "yearsMonthsDays": {
       const c = calendarLove(startAt, now, timezone);

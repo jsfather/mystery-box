@@ -2,7 +2,7 @@
 
 A shared love clock and little messaging world for **Arduino UNO R4 WiFi + a 1602 I²C LCD**. Includes the Arduino sketch, a responsive control room, an authenticated API, a private MQTT broker, persistent SQLite storage, a hardware simulator, and Docker Compose files for Dokploy.
 
-The server renders the date, time, message scrolling, and 12×8 matrix animation. The Arduino receives compact display frames over MQTT and uses its onboard RTC when the connection drops. No external RTC module is needed.
+The server supplies calendar dates, settings, message scrolling and matrix frames over MQTT. The Arduino ticks its clock and love counter locally and animates a complete heart with a two-pulse rhythm, so network delays cannot replay seconds or heartbeats. Clock corrections are gradual, and both keep running during outages while powered. No external RTC module is needed.
 
 ## For the two of you
 

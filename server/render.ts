@@ -1,5 +1,6 @@
 import { loveLine, storyVisible, wallTime } from "../shared/love.js";
 import type { Frame, Message, Settings } from "../shared/model.js";
+import { heartbeatPixels } from "../shared/heartbeat.js";
 const center = (text: string) =>
   text
     .slice(0, 16)
@@ -134,6 +135,7 @@ export function decodePixels(hex: string): number[] {
   return [...hex].flatMap((c) => [3, 2, 1, 0].map((b) => (parseInt(c, 16) >> b) & 1));
 }
 export function matrixFrame(s: Settings["matrix"], now: number): string {
+  if (s.mode === "heart") return encodePixels(heartbeatPixels(now, s.speed));
   const step = Math.floor(now / Math.max(200, 600 - s.speed * 45));
   if (s.mode === "off") return "0".repeat(24);
   if (s.mode === "custom") return s.frames[step % s.frames.length];
@@ -141,23 +143,7 @@ export function matrixFrame(s: Settings["matrix"], now: number): string {
   const set = (x: number, y: number) => {
     if (x >= 0 && x < 12 && y >= 0 && y < 8) p[y * 12 + x] = 1;
   };
-  if (s.mode === "heart") {
-    const rows = [
-      "000000000000",
-      "001100011000",
-      "011110111100",
-      "011111111100",
-      "001111111000",
-      "000111110000",
-      "000011100000",
-      "000001000000",
-    ];
-    rows.forEach((r, y) =>
-      [...r].forEach((c, x) => {
-        if (c === "1" && (step % 6 < 4 || y > 2)) set(x, y);
-      }),
-    );
-  } else if (s.mode === "wave") {
+  if (s.mode === "wave") {
     for (let x = 0; x < 12; x++) {
       set(x, Math.round(3.5 + 3 * Math.sin((x + step) * 0.6)));
     }
@@ -232,12 +218,16 @@ export function render(
     v: 1,
     seq,
     epoch: Math.floor(now / 1000),
+    ms: Math.floor(now % 1000),
     offset: c.offset,
     line1,
     line2,
     backlight: s.backlight,
     matrix: matrixFrame(s.matrix, now),
     clock: !active && !love,
+    clockTop: !!active && s.messaging.mode === "clock",
+    heart: s.matrix.mode === "heart",
+    heartSpeed: s.matrix.speed,
     love: love && !active,
     loveEnabled: !!s.love.startAt && s.displayMode !== "clock",
     loveSince: s.love.startAt ? Math.floor(Date.parse(s.love.startAt) / 1000) : 0,
