@@ -934,3 +934,30 @@ nav button.active {
     animation: none;
   }
 }
+@media (max-width: 640px) {
+  .sidebar nav {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    overflow: visible;
+    margin: 10px 0 0;
+    gap: 3px;
+  }
+  .sidebar nav button {
+    min-width: 0;
+    justify-content: center;
+    padding: 8px 3px;
+    font-size: 9px;
+    line-height: 1.35;
+    min-height: 44px;
+    gap: 4px;
+    border-radius: 6px;
+  }
+  .sidebar nav button svg {
+    height: 14px;
+    width: 14px;
+    flex-shrink: 0;
+  }
+  .sidebar {
+    padding-bottom: 7px;
+  }
+}

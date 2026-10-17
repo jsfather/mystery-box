@@ -116,7 +116,7 @@ For the last command, when serving the built dashboard at port 3000, change `APP
 node --env-file=.env --import tsx scripts/simulate.ts
 ```
 
-The simulator authenticates with the **device** account, subscribes to real MQTT frames, prints the LCD, and publishes heartbeats. It is not a substitute for electrical or on-device testing. Stop it before powering the real board; otherwise its telemetry would share the same device topic. To use a public TLS broker, set `SIMULATOR_MQTT_URL=mqtts://mqtt.example.com:8883`.
+The simulator authenticates with the MQTT **device** account, subscribes to real MQTT frames, prints the LCD, and publishes heartbeats. It is not a substitute for electrical or on-device testing. Stop it before powering the real board; otherwise its telemetry would share the same device topic. To use a public TLS broker, set `SIMULATOR_MQTT_URL=mqtts://mqtt.example.com:8883`.
 
 ## Deployment and architecture
 
@@ -130,3 +130,5 @@ This is a shared-owner, single-device, single-server application. Run **one app 
 `npm run check` checks TypeScript, the production frontend build and the automated test suite. `npm run test:integration` additionally checks real MQTT traffic against an **isolated disposable** stack; supply `TEST_ENV_FILE`, `TEST_HTTP_URL` and `TEST_MQTT_URL` when using addresses other than the verification defaults in that script. Never run it against your physical board or production data: it changes settings and sends messages.
 
 Docker image build, local Compose startup, browser sign-in/message controls, native MQTT frame delivery, topic ACLs, invalid-password rejection, last-will status and TLS certificate acceptance/rejection were checked locally. The actual UNO/LCD have not been connected here. Local Arduino compilation was blocked by HTTP 403 responses from Arduino’s package download service. A firmware compile job is included in `.github/workflows/ci.yml`; run it or compile in Arduino IDE before uploading.
+
+Version 1.1 adds the shared love clock, equal-owner accounts, permanent note history, the activity journal and the iPhone PWA. See [Our story](docs/our-story.md) for first setup and upgrade details. The automated suite currently has 26 tests; actual iPhone installation and firmware behavior still require the real devices.
