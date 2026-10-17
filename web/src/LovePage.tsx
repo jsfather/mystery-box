@@ -3,6 +3,7 @@ import { Heart, ArrowUpRight, Check, LoaderCircle, Sparkles } from "lucide-react
 import type { Snapshot, Settings } from "../../shared/model";
 import {
   elapsedLove,
+  calendarLove,
   momentFromWall,
   wallTime,
   loveFormats,
@@ -19,6 +20,20 @@ export function LoveHero({
 }) {
   const { love } = snapshot.settings;
   const elapsed = love.startAt ? elapsedLove(love.startAt, snapshot.serverTime) : null;
+  const calendar =
+    love.startAt && love.format === "yearsMonthsDays"
+      ? calendarLove(love.startAt, snapshot.serverTime, love.timezone)
+      : null;
+  const units = calendar
+    ? Object.entries(calendar)
+    : elapsed
+      ? Object.entries({
+          days: elapsed.days,
+          hours: elapsed.hours,
+          minutes: elapsed.minutes,
+          seconds: elapsed.seconds,
+        })
+      : [];
   const since = love.startAt
     ? new Intl.DateTimeFormat("en-GB", {
         dateStyle: "long",
@@ -46,16 +61,9 @@ export function LoveHero({
         <>
           <div
             className="love-counter"
-            aria-label={`${elapsed.days} days, ${elapsed.hours} hours, ${elapsed.minutes} minutes, ${elapsed.seconds} seconds together`}
+            aria-label={`${units.map(([label, value]) => `${value} ${label}`).join(", ")} together`}
           >
-            {(
-              [
-                ["days", elapsed.days],
-                ["hours", elapsed.hours],
-                ["minutes", elapsed.minutes],
-                ["seconds", elapsed.seconds],
-              ] as const
-            ).map(([label, value]) => (
+            {units.map(([label, value]) => (
               <div key={label}>
                 <strong>{String(value).padStart(2, "0")}</strong>
                 <span>{label}</span>
@@ -109,6 +117,7 @@ export function LovePage({ snapshot, save }: { snapshot: Snapshot; save: SaveSet
         { ...snapshot.settings, displayMode: mode, schedule, love: { ...love, startAt } },
         baseline.current,
       );
+      setLove((value) => ({ ...value, startAt }));
       setSaved(true);
     } catch (e) {
       setError((e as Error).message);
@@ -273,15 +282,15 @@ export function LovePage({ snapshot, save }: { snapshot: Snapshot; save: SaveSet
           <span className="eyebrow">A LITTLE LOVE, ON YOUR DESK</span>
           <h2>Not a day goes uncounted.</h2>
           <p>
-            Your display counts full days, hours, minutes and seconds from that one
-            special moment. A day here is exactly 24 hours, so the seconds stay true
-            through timezones and daylight saving.
+            {love.format === "yearsMonthsDays"
+              ? "Count complete Gregorian years, months and days in your story’s timezone. Month-end anniversaries use the last day of shorter months."
+              : "Your display counts from that one special moment. Elapsed days are exactly 24 hours, so the seconds stay true through timezones and daylight saving."}
           </p>
           <div className="love-lcd-sample">
             <span>{love.title || "YOU & ME <3"}</span>
             <strong>
               {love.startAt
-                ? loveLine(love.startAt, snapshot.serverTime, love.format)
+                ? loveLine(love.startAt, snapshot.serverTime, love.format, love.timezone)
                 : "Your story starts here"}
             </strong>
           </div>

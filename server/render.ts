@@ -1,4 +1,4 @@
-import { loveLine, storyVisible } from "../shared/love.js";
+import { loveLine, storyVisible, wallTime } from "../shared/love.js";
 import type { Frame, Message, Settings } from "../shared/model.js";
 const center = (text: string) =>
   text
@@ -199,7 +199,7 @@ export function render(
   const love = storyVisible(s, now);
   if (love) {
     line1 = center(s.love.title);
-    line2 = center(loveLine(s.love.startAt!, now, s.love.format));
+    line2 = center(loveLine(s.love.startAt!, now, s.love.format, s.love.timezone));
   }
   if (active) {
     const rows = active.text.match(/.{1,16}/g) ?? [];
@@ -242,8 +242,22 @@ export function render(
     loveEnabled: !!s.love.startAt && s.displayMode !== "clock",
     loveSince: s.love.startAt ? Math.floor(Date.parse(s.love.startAt) / 1000) : 0,
     loveTitle: s.love.title,
-    loveFormat: ["daysClock", "seconds", "days", "weeks", "hours", "rotate"].indexOf(
-      s.love.format,
+    loveFormat: [
+      "daysClock",
+      "seconds",
+      "days",
+      "weeks",
+      "hours",
+      "rotate",
+      "yearsMonthsDays",
+    ].indexOf(s.love.format),
+    loveStartWall: s.love.startAt
+      ? Math.floor(Date.parse(wallTime(s.love.startAt, s.love.timezone) + "Z") / 1000)
+      : 0,
+    loveOffset: Math.round(
+      (Date.parse(wallTime(new Date(now).toISOString(), s.love.timezone) + "Z") -
+        Math.floor(now / 1000) * 1000) /
+        1000,
     ),
     hour12: s.hour12,
     seconds: s.showSeconds,

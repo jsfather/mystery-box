@@ -56,15 +56,52 @@ export function momentFromWall(
   return new Date(matches[occurrence === "later" ? matches.length - 1 : 0]).toISOString();
 }
 
+// Complete Gregorian calendar months, with month-end anniversaries clamped
+// to the final day of shorter months. Wall time uses the saved story timezone.
+export function calendarLove(startAt: string, now: number, timezone = "UTC") {
+  const start = new Date(wallTime(startAt, timezone) + "Z");
+  const end = new Date(
+    wallTime(new Date(Math.max(Date.parse(startAt), now)).toISOString(), timezone) + "Z",
+  );
+  let months = Math.max(
+    0,
+    (end.getUTCFullYear() - start.getUTCFullYear()) * 12 +
+      end.getUTCMonth() -
+      start.getUTCMonth(),
+  );
+  const anniversary = (count: number) => {
+    const date = new Date(start);
+    date.setUTCDate(1);
+    date.setUTCMonth(start.getUTCMonth() + count);
+    const lastDay = new Date(
+      Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    date.setUTCDate(Math.min(start.getUTCDate(), lastDay));
+    return date.getTime();
+  };
+  if (anniversary(months) > end.getTime()) months = Math.max(0, months - 1);
+  return {
+    years: Math.floor(months / 12),
+    months: months % 12,
+    days: Math.max(0, Math.floor((end.getTime() - anniversary(months)) / 86400000)),
+  };
+}
+
 export const loveFormats = {
   daysClock: "Days, hours, minutes & seconds",
+  yearsMonthsDays: "Years + months + days",
   seconds: "Every second · total seconds",
   days: "Days together · total days",
   weeks: "Weeks & days together",
   hours: "Hours together · total hours",
   rotate: "A little of everything · rotate every 10 seconds",
 } as const;
-export function loveLine(startAt: string, now: number, format: keyof typeof loveFormats) {
+export function loveLine(
+  startAt: string,
+  now: number,
+  format: keyof typeof loveFormats,
+  timezone = "UTC",
+) {
   const e = elapsedLove(startAt, now);
   const pad = (v: number) => String(v).padStart(2, "0");
   if (format === "rotate")
@@ -72,6 +109,10 @@ export function loveLine(startAt: string, now: number, format: keyof typeof love
       Math.floor(now / 10000) % 4
     ];
   switch (format) {
+    case "yearsMonthsDays": {
+      const c = calendarLove(startAt, now, timezone);
+      return `${c.years}y ${c.months}m ${c.days}d`;
+    }
     case "seconds":
       return `${e.total} seconds`.length <= 16 ? `${e.total} seconds` : `${e.total}s`;
     case "days":

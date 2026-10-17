@@ -1,7 +1,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { defaults, settingsSchema } from "../shared/model.js";
-import { elapsedLove, momentFromWall, wallTime } from "../shared/love.js";
+import {
+  elapsedLove,
+  momentFromWall,
+  wallTime,
+  calendarLove,
+  loveLine,
+} from "../shared/love.js";
 import { render } from "../server/render.js";
 test("love counter counts the precise second across days and leap day", () => {
   const start = "2024-02-28T23:59:59Z",
@@ -126,6 +132,7 @@ test("all story formats fit the character display, including long relationships"
     "weeks",
     "hours",
     "rotate",
+    "yearsMonthsDays",
   ] as const) {
     for (const now of [
       Date.parse("1970-01-01T00:00:01Z"),
@@ -153,4 +160,55 @@ test("all story formats fit the character display, including long relationships"
     ).line2.trim(),
     "2w 0d 01:02",
   );
+});
+
+test("calendar story counts complete months and days at the original wall-clock second", () => {
+  const start = "2023-10-01T00:18:00+03:30";
+  assert.deepEqual(
+    calendarLove(start, Date.parse("2026-10-17T00:18:00+03:30"), "Asia/Tehran"),
+    { years: 3, months: 0, days: 16 },
+  );
+  assert.deepEqual(
+    calendarLove(start, Date.parse("2024-10-01T00:17:59+03:30"), "Asia/Tehran"),
+    { years: 0, months: 11, days: 29 },
+  );
+  assert.equal(
+    loveLine(
+      start,
+      Date.parse("2026-10-17T00:18:00+03:30"),
+      "yearsMonthsDays",
+      "Asia/Tehran",
+    ),
+    "3y 0m 16d",
+  );
+  const settings = settingsSchema.parse({
+    ...defaults,
+    displayMode: "love",
+    love: { ...defaults.love, startAt: start, format: "yearsMonthsDays" },
+  });
+  const frame = render(settings, [], Date.parse("2026-10-17T00:18:00+03:30"));
+  assert.equal(frame.line2.trim(), "3y 0m 16d");
+  assert.equal(frame.loveFormat, 6);
+  assert.equal(frame.loveOffset, 12600);
+  assert.equal(frame.loveStartWall, Date.parse("2023-10-01T00:18:00Z") / 1000);
+});
+
+test("calendar story clamps leap days and month ends, and uses story timezone across DST", () => {
+  for (const [start, now, expected] of [
+    ["2024-01-31T12:00:00Z", "2024-02-29T11:59:59Z", { years: 0, months: 0, days: 28 }],
+    ["2024-01-31T12:00:00Z", "2024-02-29T12:00:00Z", { years: 0, months: 1, days: 0 }],
+    ["2024-02-29T12:00:00Z", "2025-02-28T12:00:00Z", { years: 1, months: 0, days: 0 }],
+    ["2024-01-31T12:00:00Z", "2024-03-30T12:00:00Z", { years: 0, months: 1, days: 30 }],
+    ["2024-01-31T12:00:00Z", "2024-03-31T12:00:00Z", { years: 0, months: 2, days: 0 }],
+    ["2024-01-31T12:00:00Z", "2023-01-01T12:00:00Z", { years: 0, months: 0, days: 0 }],
+  ] as const)
+    assert.deepEqual(calendarLove(start, Date.parse(now)), expected);
+  const start = "2024-03-09T12:00:00-05:00",
+    now = Date.parse("2024-03-10T12:00:00-04:00");
+  assert.deepEqual(calendarLove(start, now, "America/New_York"), {
+    years: 0,
+    months: 0,
+    days: 1,
+  });
+  assert.deepEqual(calendarLove(start, now, "UTC"), { years: 0, months: 0, days: 0 });
 });

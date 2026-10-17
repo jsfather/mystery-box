@@ -12,6 +12,7 @@
 #include <Arduino_LED_Matrix.h>
 #include <RTC.h>
 #include "arduino_secrets.h"
+#include "calendar_counter.h"
 
 #if MQTT_TLS
 WiFiSSLClient transport;
@@ -31,6 +32,8 @@ bool synced = false, lcdReady = false, lightOn = true;
 bool hour12 = false, showSeconds = true, loveEnabled = false;
 uint32_t loveSince = 0;
 uint8_t loveFormat = 0;
+int64_t loveStartWall = 0;
+int32_t loveOffset = 0;
 char loveTitle[17] = "YOU & ME <3";
 char displayed[2][17] = {{0}, {0}}, cachedDate[17] = "Waiting for time";
 uint8_t pixels[8][12] = {{0}};
@@ -113,7 +116,10 @@ void received(char* topic, byte* payload, unsigned int length) {
   loveEnabled = (doc["loveEnabled"] | false) && doc["loveSince"].is<uint32_t>();
   loveSince = doc["loveSince"] | 0UL;
   loveFormat = doc["loveFormat"] | 0;
-  if (loveFormat > 5) loveFormat = 0;
+  if (loveFormat > 6) loveFormat = 0;
+  loveStartWall = doc["loveStartWall"] | (int64_t)loveSince;
+  loveOffset = doc["loveOffset"] | 0;
+  if (loveOffset < -50400 || loveOffset > 50400) loveOffset = 0;
   if (loveSince > epoch) loveEnabled = false;
   strncpy(loveTitle, title, 16);
   loveTitle[16] = '\0';
@@ -185,6 +191,7 @@ void offlineClock() {
       case 2: snprintf(counter, sizeof(counter), "%lu days of us", days); break;
       case 3: snprintf(counter, sizeof(counter), "%luw %lud %02u:%02u", days / 7, days % 7, h, m); break;
       case 4: snprintf(counter, sizeof(counter), "%luh %02um %02us", (unsigned long)(elapsed / 3600UL), m, sec); break;
+      case 6: StoryCalendar::format(counter, sizeof(counter), loveStartWall, utc + loveOffset); break;
       default: snprintf(counter, sizeof(counter), "%lud %02u:%02u:%02u", days, h, m, sec); break;
     }
     row(0, dedication);

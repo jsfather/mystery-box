@@ -113,7 +113,7 @@ body {
   color: #8d4a5d;
 }
 .love-counter > div:first-child strong {
-  color: #613c43;
+  color: var(--story-ink);
 }
 .love-counter span {
   font-size: 10px;

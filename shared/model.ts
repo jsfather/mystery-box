@@ -19,7 +19,15 @@ export const timezoneSchema = z
 export const loveSchema = z
   .object({
     format: z
-      .enum(["daysClock", "seconds", "days", "weeks", "hours", "rotate"])
+      .enum([
+        "daysClock",
+        "seconds",
+        "days",
+        "weeks",
+        "hours",
+        "rotate",
+        "yearsMonthsDays",
+      ])
       .default("daysClock"),
     names: z.string().trim().min(1).max(80).default("You & me"),
     startAt: z.iso
@@ -160,6 +168,8 @@ export interface Frame {
   loveEnabled: boolean;
   loveTitle: string;
   loveFormat: number;
+  loveStartWall: number;
+  loveOffset: number;
 }
 export interface Device {
   online: boolean;
