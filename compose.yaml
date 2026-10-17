@@ -1,0 +1,40 @@
+# Production base. Dokploy routes HTTPS to app:3000. No public plaintext MQTT.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN to the dashboard HTTPS origin}
+      COOKIE_SECURE: "true"
+      TRUST_PROXY: "1"
+      DEVICE_ID: ${DEVICE_ID:-uno-r4}
+      MQTT_URL: mqtt://broker:1883
+      MQTT_USERNAME: server
+      MQTT_PASSWORD: ${MQTT_SERVER_PASSWORD:?Set MQTT_SERVER_PASSWORD}
+      DATA_DIR: /app/data
+    expose: ["3000"]
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      broker:
+        condition: service_started
+    security_opt: ["no-new-privileges:true"]
+  broker:
+    image: eclipse-mosquitto:2.0.22
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/opt/start.sh"]
+    environment:
+      MQTT_SERVER_PASSWORD: ${MQTT_SERVER_PASSWORD:?Set MQTT_SERVER_PASSWORD}
+      MQTT_DEVICE_PASSWORD: ${MQTT_DEVICE_PASSWORD:?Set MQTT_DEVICE_PASSWORD}
+      DEVICE_ID: ${DEVICE_ID:-uno-r4}
+    volumes:
+      - ./broker/start.sh:/opt/start.sh:ro
+    tmpfs:
+      - /mosquitto/generated:mode=0700
+    expose: ["1883"]
+    security_opt: ["no-new-privileges:true"]
+volumes:
+  app-data:

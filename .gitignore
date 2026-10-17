@@ -1,0 +1,11 @@
+node_modules/
+dist/
+data/
+.env
+.env.*
+!.env.example
+firmware/mystery_box/arduino_secrets.h
+certs/
+.idea/
+.DS_Store
+*.log

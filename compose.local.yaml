@@ -1,0 +1,12 @@
+# Trusted LAN development. Run with compose.yaml; production uses compose.tls.yaml.
+services:
+  app:
+    environment:
+      NODE_ENV: development
+      APP_ORIGIN: http://localhost:${LOCAL_HTTP_PORT:-3000}
+      COOKIE_SECURE: "false"
+    ports:
+      - "127.0.0.1:${LOCAL_HTTP_PORT:-3000}:3000"
+  broker:
+    ports:
+      - "${MQTT_BIND_ADDRESS:-127.0.0.1}:1883:1883"

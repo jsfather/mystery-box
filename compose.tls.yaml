@@ -1,0 +1,10 @@
+# Dokploy production: compose.yaml + compose.tls.yaml.
+# MQTT_CERT_DIR is an absolute host directory with readable fullchain.pem / privkey.pem.
+services:
+  broker:
+    environment:
+      MQTT_TLS_ENABLED: "true"
+    ports:
+      - "8883:8883"
+    volumes:
+      - ${MQTT_CERT_DIR:?Set MQTT_CERT_DIR to your MQTT TLS certificate directory}:/mosquitto/certs:ro
