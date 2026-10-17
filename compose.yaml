@@ -7,6 +7,11 @@ services:
     environment:
       NODE_ENV: production
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-husband}
+      ADMIN_NAME: ${ADMIN_NAME:-My love}
+      PARTNER_USERNAME: ${PARTNER_USERNAME:-wife}
+      PARTNER_NAME: ${PARTNER_NAME:-My person}
+      PARTNER_PASSWORD: ${PARTNER_PASSWORD:-}
       APP_ORIGIN: ${APP_ORIGIN:?Set APP_ORIGIN to the dashboard HTTPS origin}
       COOKIE_SECURE: "true"
       TRUST_PROXY: "1"

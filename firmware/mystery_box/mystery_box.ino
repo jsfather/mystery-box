@@ -28,7 +28,9 @@ uint32_t lastFrameAt = 0, lastSyncAt = 0, lastTelemetryAt = 0;
 uint32_t nextAttempt = 0, retryMs = 1000, lastSeq = 0, lastOfflineDraw = 0;
 int32_t utcOffset = 0, cachedDateKey = 0;
 bool synced = false, lcdReady = false, lightOn = true;
-bool hour12 = false, showSeconds = true;
+bool hour12 = false, showSeconds = true, loveEnabled = false;
+uint32_t loveSince = 0;
+char loveTitle[17] = "YOU & ME <3";
 char displayed[2][17] = {{0}, {0}}, cachedDate[17] = "Waiting for time";
 uint8_t pixels[8][12] = {{0}};
 
@@ -102,6 +104,16 @@ void received(char* topic, byte* payload, unsigned int length) {
       synced = true;
     }
   }
+  const char* title = doc["loveTitle"] | "YOU & ME <3";
+  if (strlen(title) < 1 || strlen(title) > 16) return;
+  for (size_t i = 0; i < strlen(title); i++) {
+    if (title[i] < 32 || title[i] > 126) return;
+  }
+  loveEnabled = (doc["loveEnabled"] | false) && doc["loveSince"].is<uint32_t>();
+  loveSince = doc["loveSince"] | 0UL;
+  if (loveSince > epoch) loveEnabled = false;
+  strncpy(loveTitle, title, 16);
+  loveTitle[16] = '\0';
   utcOffset = offset;
   hour12 = doc["hour12"] | false;
   showSeconds = doc["seconds"] | true;
@@ -132,7 +144,7 @@ void telemetry() {
   doc["online"] = true;
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
-  doc["firmware"] = "1.0.0";
+  doc["firmware"] = "1.1.0";
   doc["seq"] = lastSeq;
   char buffer[224];
   serializeJson(doc, buffer, sizeof(buffer));
@@ -144,7 +156,25 @@ void offlineClock() {
   if (!synced) return;
   RTCTime t;
   if (!RTC.getTime(t)) return;
-  const int64_t local = (int64_t)t.getUnixTime() + utcOffset;
+  const int64_t utc = (int64_t)t.getUnixTime();
+  if (loveEnabled) {
+    const uint32_t elapsed = utc > loveSince ? (uint32_t)(utc - loveSince) : 0;
+    char dedication[17], counter[17];
+    memset(dedication, ' ', 16);
+    dedication[16] = '\0';
+    const size_t n = strlen(loveTitle);
+    memcpy(dedication + (16 - n) / 2, loveTitle, n);
+    dedication[15] = '*';
+    snprintf(counter, sizeof(counter), "%lud %02u:%02u:%02u",
+      (unsigned long)(elapsed / 86400UL),
+      (unsigned int)((elapsed / 3600UL) % 24),
+      (unsigned int)((elapsed / 60UL) % 60),
+      (unsigned int)(elapsed % 60));
+    row(0, dedication);
+    centered(1, counter);
+    return;
+  }
+  const int64_t local = utc + utcOffset;
   const uint32_t daySeconds = (uint32_t)((local % 86400 + 86400) % 86400);
   const int h = daySeconds / 3600, m = (daySeconds / 60) % 60, s = daySeconds % 60;
   const int displayHour = hour12 ? (h % 12 ? h % 12 : 12) : h;

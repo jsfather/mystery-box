@@ -29,8 +29,11 @@ import {
   Play,
   Copy,
   RotateCcw,
+  Heart,
+  UsersRound,
+  NotebookPen,
 } from "lucide-react";
-import type { Settings, Snapshot } from "../../shared/model";
+import type { Settings, Snapshot, User } from "../../shared/model";
 import { decodePixels, encodePixels } from "../../server/render";
 import "@fontsource/dm-sans/latin-400.css";
 import "@fontsource/dm-sans/latin-500.css";
@@ -38,20 +41,31 @@ import "@fontsource/dm-sans/latin-600.css";
 import "@fontsource/space-grotesk/latin-400.css";
 import "@fontsource/space-grotesk/latin-500.css";
 import "@fontsource/space-grotesk/latin-700.css";
+import { api, type SaveSettings } from "./api";
+import { MessageComposer } from "./MessageComposer";
+import { LoveHero, LovePage } from "./LovePage";
+import { PeoplePage } from "./PeoplePage";
+import { MessageHistory, ActivityPage } from "./JournalPage";
+import { InstallApp, registerPwa } from "./pwa";
 import "./style.css";
-type Page = "overview" | "clock" | "messages" | "matrix" | "device";
-async function api(path: string, method = "GET", body?: unknown) {
-  const r = await fetch("/api/" + path, {
-    method,
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data.error ?? "Request failed");
-  return data;
-}
+import "./love.css";
+type Page =
+  | "overview"
+  | "clock"
+  | "messages"
+  | "matrix"
+  | "device"
+  | "love"
+  | "people"
+  | "activity";
 const pageInfo: Record<Page, [string, string]> = {
-  overview: ["Control room", "A little hardware. A world of possibilities."],
+  overview: [
+    "Our little world",
+    "A little love, a little light. A place that’s just ours.",
+  ],
+  love: ["Our story", "From one special second, to a lifetime of little moments."],
+  people: ["You & me", "Separate accounts. One little world to share."],
+  activity: ["Our journal", "The little things we’ve changed, sent and shared."],
   clock: ["Time & display", "Your time, your calendar, your corner of the world."],
   messages: ["Messages", "Send a little something to the real world."],
   matrix: ["LED studio", "Twelve by eight pixels. Make every one count."],
@@ -59,6 +73,8 @@ const pageInfo: Record<Page, [string, string]> = {
 };
 function App() {
   const [auth, setAuth] = useState<boolean | null>(null),
+    [username, setUsername] = useState(""),
+    [me, setMe] = useState<User | null>(null),
     [password, setPassword] = useState(""),
     [loginError, setLoginError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -69,11 +85,23 @@ function App() {
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     api("session")
-      .then((s) => setAuth(s.authenticated))
+      .then((s) => {
+        setAuth(s.authenticated);
+        setMe(s.user);
+      })
       .catch(() => {
         setAuth(false);
         setLoginError("Cannot reach server. Please try again.");
       });
+  }, []);
+  useEffect(() => {
+    const expire = () => {
+      setAuth(false);
+      setMe(null);
+      setSnapshot(null);
+    };
+    window.addEventListener("mb-auth-expired", expire);
+    return () => window.removeEventListener("mb-auth-expired", expire);
   }, []);
   useEffect(() => {
     if (!auth) return;
@@ -105,15 +133,21 @@ function App() {
       setLive(false);
     };
   }, [auth]);
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [page]);
   function notice(text: string) {
     setToast(text);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(""), 4000);
   }
-  async function save(s: Settings) {
+  async function save(s: Settings, expectedRevision = snapshot!.settingsRevision) {
     try {
-      await api("settings", "PUT", s);
-      notice("Settings saved · updating your device");
+      const result = await api("settings", "PUT", s, {
+        "If-Match": String(expectedRevision),
+      });
+      notice("Saved to our little world");
+      return result.revision as number;
     } catch (e) {
       notice((e as Error).message);
       throw e;
@@ -124,7 +158,8 @@ function App() {
     setBusy(true);
     setLoginError("");
     try {
-      await api("login", "POST", { password });
+      const result = await api("login", "POST", { username, password });
+      setMe(result.user);
       setPassword("");
       setAuth(true);
     } catch (e) {
@@ -146,15 +181,14 @@ function App() {
         <div className="login-art">
           <Brand />
           <div>
-            <span className="eyebrow">SMALL BOARD. BIG POSSIBILITIES.</span>
+            <span className="eyebrow">FOR ALL OUR LITTLE MOMENTS.</span>
             <h1>
-              Give your desk
-              <br />a little life<span>.</span>
+              One little box,
+              <br />a lifetime of us<span>.</span>
             </h1>
             <p>
-              A clock, a message, a little light.
-              <br />
-              Your Mystery Box is ready for its next idea.
+              Every second together. Every little note.
+              <br />A small reminder of something extraordinary.
             </p>
             <div className="art-matrix">
               {decodePixels("0003187bc7fc3f81f00e0040").map((p, i) => (
@@ -168,14 +202,25 @@ function App() {
           <span className="mini-icon">
             <LockKeyhole size={22} />
           </span>
-          <h2>Welcome to your control room</h2>
-          <p>Sign in to make a little magic happen.</p>
-          <label htmlFor="password">Admin password</label>
+          <h2>Welcome home, love.</h2>
+          <p>Your own account. Our shared little world.</p>
+          <label htmlFor="username">Username</label>
+          <input
+            id="username"
+            required
+            autoComplete="username"
+            autoCapitalize="none"
+            autoCorrect="off"
+            maxLength={32}
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Your username"
+          />
+          <label htmlFor="password">Password</label>
           <input
             id="password"
             type="password"
             required
-            autoFocus
             autoComplete="current-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -191,11 +236,11 @@ function App() {
               <LoaderCircle className="spin" size={17} />
             ) : (
               <>
-                Open control room <ArrowRight size={17} />
+                Come on in <ArrowRight size={17} />
               </>
             )}
           </button>
-          <small>Your server. Your hardware. Your space.</small>
+          <small>Just you, me, and all the seconds in between.</small>
         </form>
       </div>
     );
@@ -209,20 +254,23 @@ function App() {
             <Box size={20} />
           </span>
           <div>
-            <strong>My workspace</strong>
-            <small>Personal hardware lab</small>
+            <strong>{me?.name ?? "Our space"}</strong>
+            <small>Our shared little world</small>
           </div>
           <span className="tiny-pill">01</span>
         </div>
-        <span className="nav-caption">WORKSPACE</span>
+        <span className="nav-caption">AT HOME, TOGETHER</span>
         <nav>
           {(
             [
-              ["overview", LayoutDashboard, "Overview"],
+              ["overview", LayoutDashboard, "Our little world"],
+              ["love", Heart, "Our story"],
               ["clock", Clock3, "Time & display"],
               ["messages", MessageSquare, "Messages"],
               ["matrix", Grid3X3, "LED studio"],
               ["device", Radio, "Connection"],
+              ["people", UsersRound, "You & me"],
+              ["activity", NotebookPen, "Our journal"],
             ] as const
           ).map(([id, Icon, label]) => (
             <button
@@ -239,11 +287,11 @@ function App() {
         <div className="sidebar-bottom">
           <div className="board-note">
             <span className="status-dot" />
-            <strong>Made for the real world</strong>
+            <strong>Made for the two of us</strong>
             <p>
               UNO R4 WiFi + 1602 LCD
               <br />
-              One small, connected box.
+              One little reminder of us.
             </p>
             <Cable size={31} />
           </div>
@@ -260,19 +308,21 @@ function App() {
           >
             <LogOut size={16} /> Sign out
           </button>
-          <small className="version">MYSTERY BOX / V1.0</small>
+          <small className="version">MYSTERY BOX / V1.1</small>
         </div>
       </aside>
       <div className="main">
         <header className="topbar">
           <div className="breadcrumb">
-            Workspace <ChevronRight size={14} />
+            Our space <ChevronRight size={14} />
             <strong>{pageInfo[page][0]}</strong>
           </div>
           <div className="top-status">
             <span className={"status-dot " + (live ? "" : "muted")} />
             {live ? "Live connection" : "Reconnecting…"}
-            <span className="avatar">M</span>
+            <span className="avatar" title={me?.name}>
+              {me?.name.slice(0, 1) ?? "♥"}
+            </span>
             <button
               className="top-logout"
               aria-label="Sign out"
@@ -292,7 +342,7 @@ function App() {
         <main>
           <div className="page-heading">
             <div>
-              <div className="eyebrow">YOUR DESK, CONNECTED</div>
+              <div className="eyebrow">SOMEWHERE ONLY WE KNOW</div>
               <h1>
                 {pageInfo[page][0]}
                 <span>.</span>
@@ -304,6 +354,12 @@ function App() {
               {s?.device.online ? "Device online" : "Device offline"}
             </span>
           </div>
+          {s && !live && (
+            <div className="connection-banner" role="status">
+              Reconnecting to our little world. The preview is paused; sending and saving
+              need a connection.
+            </div>
+          )}
           {!s ? (
             <div className="loading">
               <LoaderCircle className="spin" />
@@ -313,6 +369,7 @@ function App() {
             <>
               {page === "overview" && (
                 <>
+                  <LoveHero snapshot={s} onSetup={() => setPage("love")} />
                   <div className="stats">
                     <Stat
                       icon={<Clock3 />}
@@ -392,9 +449,11 @@ function App() {
                         </div>
                         <div className="stage-label">
                           <span className="pulse-dot" />
-                          {s.frame.clock
-                            ? "Keeping up with your world"
-                            : "A message takes the stage"}
+                          {s.frame.love
+                            ? "Every second, together"
+                            : s.frame.clock
+                              ? "Keeping up with your world"
+                              : "A message takes the stage"}
                         </div>
                       </div>
                       <div className="display-footer">
@@ -506,80 +565,24 @@ function App() {
                 </>
               )}
               {page === "clock" && (
-                <ClockSettings settings={s.settings} save={save} frame={s.frame} />
+                <ClockSettings
+                  settings={s.settings}
+                  revision={s.settingsRevision}
+                  save={save}
+                  frame={s.frame}
+                />
               )}
-              {page === "messages" && (
-                <div className="detail-grid">
-                  <section className="card">
-                    <CardTitle eyebrow="FROM HERE TO THERE" title="Compose a message" />
-                    <MessageComposer
-                      onSend={async (text, duration) => {
-                        await api("messages", "POST", { text, duration });
-                        notice("Message queued");
-                      }}
-                    />
-                  </section>
-                  <section className="card">
-                    <CardTitle eyebrow="ON THE WAY" title="Message queue" />
-                    <div className="message-list">
-                      {s.messages
-                        .slice()
-                        .reverse()
-                        .map((m) => {
-                          const status = m.cancelled
-                            ? "Cancelled"
-                            : m.expiresAt <= s.serverTime
-                              ? "Delivered window ended"
-                              : m.startsAt > s.serverTime
-                                ? "Queued"
-                                : "On screen";
-                          return (
-                            <div className="message-item" key={m.id}>
-                              <div>
-                                <strong>{m.text}</strong>
-                                <small>
-                                  {status} ·{" "}
-                                  {Math.round((m.expiresAt - m.startsAt) / 1000)}s{" "}
-                                  {m.startsAt > s.serverTime
-                                    ? `· starts in ${Math.ceil((m.startsAt - s.serverTime) / 1000)}s`
-                                    : ""}
-                                </small>
-                              </div>
-                              {!m.cancelled && m.expiresAt > s.serverTime && (
-                                <button
-                                  className="icon-button"
-                                  aria-label="Cancel message"
-                                  onClick={() =>
-                                    api(`messages/${m.id}`, "DELETE")
-                                      .then(() => notice("Message cancelled"))
-                                      .catch((e) => notice(e.message))
-                                  }
-                                >
-                                  <X size={16} />
-                                </button>
-                              )}
-                            </div>
-                          );
-                        })}
-                      {!s.messages.length && (
-                        <div className="empty">
-                          <MessageSquare size={30} />
-                          <h3>Good things start with hello.</h3>
-                          <p>Your messages will appear here.</p>
-                        </div>
-                      )}
-                    </div>
-                    <p className="quiet-note">
-                      <Info size={14} />
-                      Windows expire even while the device is offline. “On screen” is the
-                      server’s current intent, not a delivery receipt. Cancelling keeps
-                      later scheduled windows.
-                    </p>
-                  </section>
-                </div>
-              )}
+              {page === "messages" && <MessageHistory snapshot={s} notice={notice} />}
+              {page === "love" && <LovePage snapshot={s} save={save} />}
+              {page === "people" && me && <PeoplePage me={me} onMeChange={setMe} />}
+              {page === "activity" && <ActivityPage />}
               {page === "matrix" && (
-                <MatrixStudio settings={s.settings} hex={s.frame.matrix} save={save} />
+                <MatrixStudio
+                  settings={s.settings}
+                  revision={s.settingsRevision}
+                  hex={s.frame.matrix}
+                  save={save}
+                />
               )}
               {page === "device" && (
                 <div className="detail-grid">
@@ -654,9 +657,10 @@ function App() {
               )}
             </>
           )}
+          <InstallApp />
           <footer>
             <Brand small />
-            <span>A small connection to something real.</span>
+            <span>For all the seconds still to come.</span>
             <span>Designed for UNO R4 WiFi</span>
           </footer>
         </main>
@@ -682,7 +686,6 @@ function Brand({ small = false }: { small?: boolean }) {
       <strong>
         mystery<span>box</span>
       </strong>
-      {!small && <i>®</i>}
     </div>
   );
 }
@@ -790,89 +793,21 @@ function Matrix({
     </div>
   );
 }
-function MessageComposer({
-  onSend,
-  compact = false,
-}: {
-  onSend: (text: string, duration: number) => Promise<void>;
-  compact?: boolean;
-}) {
-  const [text, setText] = useState(""),
-    [duration, setDuration] = useState(15),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  return (
-    <form
-      className="composer"
-      onSubmit={async (e) => {
-        e.preventDefault();
-        setBusy(true);
-        setError("");
-        try {
-          await onSend(text, duration);
-          setText("");
-        } catch (e) {
-          setError((e as Error).message);
-        } finally {
-          setBusy(false);
-        }
-      }}
-    >
-      <div className="textarea-wrap">
-        <textarea
-          aria-label="Message text"
-          placeholder="Hello, world. Or just someone special…"
-          maxLength={160}
-          required
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={compact ? 2 : 4}
-        />
-        <span>{text.length}/160</span>
-      </div>
-      <p className="input-note">
-        Latin letters & numbers · Long messages scroll automatically.
-      </p>
-      {error && (
-        <p role="alert" className="error">
-          {error}
-        </p>
-      )}
-      <div className="composer-actions">
-        <label>
-          Show for{" "}
-          <select
-            aria-label="Message duration"
-            value={duration}
-            onChange={(e) => setDuration(+e.target.value)}
-          >
-            {[5, 15, 30, 60, 120, 300].map((v) => (
-              <option key={v} value={v}>
-                {v} seconds
-              </option>
-            ))}
-          </select>
-        </label>
-        <button disabled={busy || !text.trim()} className="primary">
-          {busy ? <LoaderCircle size={16} className="spin" /> : <Send size={15} />}
-          Send message
-        </button>
-      </div>
-    </form>
-  );
-}
 function ClockSettings({
   settings,
+  revision,
   save,
   frame,
 }: {
   settings: Settings;
-  save: (s: Settings) => Promise<void>;
+  save: SaveSettings;
+  revision: number;
   frame: Snapshot["frame"];
 }) {
   const [draft, setDraft] = useState(settings),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const baseline = useRef(revision);
   const zones = Intl.supportedValuesOf("timeZone");
   return (
     <div className="detail-grid">
@@ -883,7 +818,7 @@ function ClockSettings({
           setBusy(true);
           setError("");
           try {
-            await save(draft);
+            baseline.current = await save(draft, baseline.current);
           } catch (e) {
             setError((e as Error).message);
           } finally {
@@ -1003,17 +938,20 @@ function ClockSettings({
 }
 function MatrixStudio({
   settings,
+  revision,
   hex,
   save,
 }: {
   settings: Settings;
   hex: string;
-  save: (s: Settings) => Promise<void>;
+  save: SaveSettings;
+  revision: number;
 }) {
   const [draft, setDraft] = useState(settings.matrix),
     [index, setIndex] = useState(0),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const baseline = useRef(revision);
   const modes = [
     ["off", "Lights off"],
     ["heart", "Heartbeat"],
@@ -1031,7 +969,10 @@ function MatrixStudio({
           setBusy(true);
           setError("");
           try {
-            await save({ ...settings, matrix: draft });
+            baseline.current = await save(
+              { ...settings, matrix: draft },
+              baseline.current,
+            );
           } catch (e) {
             setError((e as Error).message);
           } finally {
@@ -1203,6 +1144,7 @@ function MatrixStudio({
   );
 }
 
+registerPwa();
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <App />

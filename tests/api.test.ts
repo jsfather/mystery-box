@@ -32,6 +32,7 @@ test("authenticated API validates changes, rejects cross origin and serves SSE",
       messages: store.messages(),
       serverTime: Date.now(),
       deviceId: "uno-r4",
+      settingsRevision: store.revision(),
     }),
     changed: () => {},
     listen: (_fn: () => void) => () => {},
@@ -52,17 +53,35 @@ test("authenticated API validates changes, rejects cross origin and serves SSE",
       (
         await req(
           "/api/login",
-          post({ password: config.ADMIN_PASSWORD }, { Origin: "https://evil.example" }),
+          post(
+            { username: config.ADMIN_USERNAME, password: config.ADMIN_PASSWORD },
+            { Origin: "https://evil.example" },
+          ),
         )
       ).status,
       403,
     );
-    assert.equal((await req("/api/login", post({ password: "bad" }))).status, 401);
-    const login = await req("/api/login", post({ password: config.ADMIN_PASSWORD }));
+    assert.equal(
+      (
+        await req(
+          "/api/login",
+          post({ username: config.ADMIN_USERNAME, password: "bad" }),
+        )
+      ).status,
+      401,
+    );
+    const login = await req(
+      "/api/login",
+      post({ username: config.ADMIN_USERNAME, password: config.ADMIN_PASSWORD }),
+    );
     assert.equal(login.status, 200);
     const cookie = login.headers.get("set-cookie")!.split(";")[0];
     assert.match(login.headers.get("set-cookie")!, /HttpOnly/);
-    const headers = { Cookie: cookie, "Content-Type": "application/json" };
+    const headers = {
+      Cookie: cookie,
+      "Content-Type": "application/json",
+      "If-Match": String(store.revision()),
+    };
     assert.equal((await req("/api/state", { headers })).status, 200);
     assert.equal(
       (
@@ -129,4 +148,154 @@ test("production rejects insecure deployment config", () => {
       }),
     /HTTPS/,
   );
+});
+
+test("both partners can manage settings, message history and accounts with private attribution", async () => {
+  const path = mkdtempSync(join(tmpdir(), "mb-couple-api-")),
+    store = new Store(path);
+  const config = readConfig({
+    ADMIN_PASSWORD: "husband-password-123",
+    PARTNER_PASSWORD: "wife-password-12345",
+    ADMIN_NAME: "Husband",
+    PARTNER_NAME: "Wife",
+    MQTT_PASSWORD: "mqtt-password-12345",
+  });
+  const runtime = {
+    snapshot: (): Snapshot => ({
+      settings: store.settings(),
+      frame: render(store.settings(), store.messages()),
+      settingsRevision: store.revision(),
+      messages: store.messages(),
+      serverTime: Date.now(),
+      deviceId: "uno-r4",
+      broker: false,
+      device: {
+        online: false,
+        lastSeen: null,
+        rssi: null,
+        ip: null,
+        firmware: null,
+        seq: null,
+      },
+    }),
+    changed: () => {},
+    listen: () => () => {},
+  };
+  const server = createApp(config, store, runtime).listen(0, "127.0.0.1");
+  await new Promise<void>((resolve) => server.once("listening", resolve));
+  const origin = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const request = (
+    route: string,
+    method = "GET",
+    body?: unknown,
+    cookie = "",
+    extra = {},
+  ) =>
+    fetch(origin + "/api/" + route, {
+      method,
+      headers: { Cookie: cookie, "Content-Type": "application/json", ...extra },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  const login = async (username: string, password: string) => {
+    const response = await request("login", "POST", { username, password });
+    assert.equal(response.status, 200);
+    return response.headers.get("set-cookie")!.split(";")[0];
+  };
+  try {
+    for (const route of ["messages", "users", "activity"])
+      assert.equal((await request(route)).status, 401);
+    const his = await login("husband", config.ADMIN_PASSWORD),
+      hers = await login("wife", config.PARTNER_PASSWORD!);
+    const wife = store.users().find((u) => u.username === "wife")!;
+    const state = await (await request("state", "GET", undefined, hers)).json();
+    assert.equal((await request("settings", "PUT", state.settings, hers)).status, 428);
+    const love = {
+      ...state.settings,
+      displayMode: "love",
+      love: { ...state.settings.love, startAt: "2024-02-14T18:19:20.000Z" },
+    };
+    assert.equal(
+      (
+        await request("settings", "PUT", love, hers, {
+          "If-Match": String(state.settingsRevision),
+        })
+      ).status,
+      200,
+    );
+    assert.equal(
+      (
+        await request("settings", "PUT", state.settings, his, {
+          "If-Match": String(state.settingsRevision),
+        })
+      ).status,
+      409,
+    );
+    const revision = String(store.revision());
+    assert.equal(
+      (
+        await request(
+          "settings",
+          "PUT",
+          { ...love, love: { ...love.love, startAt: "2099-01-01T00:00:00Z" } },
+          his,
+          { "If-Match": revision },
+        )
+      ).status,
+      400,
+    );
+    const note = await request(
+      "messages",
+      "POST",
+      { text: "Always you <3", duration: 15 },
+      hers,
+    );
+    assert.equal(note.status, 201);
+    const sent = await note.json();
+    assert.equal(sent.authorId, wife.id);
+    const history = await (
+      await request("messages?q=Always", "GET", undefined, his)
+    ).json();
+    assert.equal(history.items[0].text, "Always you <3");
+    assert.equal(history.items[0].authorName, "Wife");
+    assert.equal(
+      (await request(`messages/${sent.id}/replay`, "POST", undefined, his)).status,
+      201,
+    );
+    const logs = await (await request("activity", "GET", undefined, hers)).json();
+    assert.ok(
+      logs.items.some(
+        (e: { action: string; actorId: string }) =>
+          e.action === "settings.updated" && e.actorId === wife.id,
+      ),
+    );
+    assert.ok(!JSON.stringify(logs).includes(config.ADMIN_PASSWORD));
+    const people = await (await request("users", "GET", undefined, hers)).json();
+    assert.equal(people.items.length, 2);
+    assert.ok(!JSON.stringify(people).includes("passwordHash"));
+    const creation = await request(
+      "users",
+      "POST",
+      { username: "guest", name: "Guest", password: "guest-password-1234" },
+      hers,
+    );
+    assert.equal(creation.status, 201);
+    assert.equal(
+      (await request(`users/${wife.id}`, "PATCH", { enabled: false }, hers)).status,
+      409,
+    );
+    assert.equal(
+      (await request(`users/${wife.id}`, "PATCH", { enabled: false }, his)).status,
+      200,
+    );
+    assert.equal((await request("state", "GET", undefined, hers)).status, 401);
+    assert.equal(
+      (await request("activity?before=oops", "GET", undefined, his)).status,
+      400,
+    );
+  } finally {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    store.close();
+    rmSync(path, { recursive: true, force: true });
+  }
 });

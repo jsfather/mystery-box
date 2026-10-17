@@ -1,17 +1,25 @@
 # Mystery Box
 
-A server-driven desk clock for **Arduino UNO R4 WiFi + a 1602 I²C LCD**. Includes the Arduino sketch, a responsive control room, an authenticated API, a private MQTT broker, persistent SQLite storage, a hardware simulator, and Docker Compose files for Dokploy.
+A shared love clock and little messaging world for **Arduino UNO R4 WiFi + a 1602 I²C LCD**. Includes the Arduino sketch, a responsive control room, an authenticated API, a private MQTT broker, persistent SQLite storage, a hardware simulator, and Docker Compose files for Dokploy.
 
 The server renders the date, time, message scrolling, and 12×8 matrix animation. The Arduino receives compact display frames over MQTT and uses its onboard RTC when the connection drops. No external RTC module is needed.
 
+## For the two of you
+
+Start with [your shared story, accounts and iPhone installation](docs/our-story.md). Save the exact second your love began, give each of you a separate account, and keep every little note in your shared archive.
+
 ## What you can do
 
+- Set your relationship’s exact starting date, time, seconds and timezone. Show elapsed days/hours/minutes/seconds on the dashboard and LCD, or alternate with the clock.
+- Use separate accounts with equal settings and user-management access. Create/edit accounts, change/reset passwords, and disable access.
+- Keep a searchable, sender-attributed message archive and persistent activity journal.
+- Install the PWA on an iPhone Home Screen from Safari over HTTPS.
 - Choose **Jalali/Persian or Gregorian** dates, three date orders, any IANA timezone, 12/24-hour time, and seconds.
 - Switch the LCD backlight on/off without stopping the clock.
 - Queue up to 20 timed messages. Short messages use both rows; messages longer than 32 characters scroll.
 - Play heart, wave, and rain animations; scroll Latin text; draw and sequence up to 32 custom matrix frames.
 - See the server’s intended output live, plus device heartbeat, signal strength, IP, firmware, and last frame reported.
-- Keep settings and message windows across server restarts.
+- Keep settings, message history, accounts, sessions and activity across server restarts.
 
 **Hardware limitation:** a typical HD44780 1602 display cannot render arbitrary Persian text, shaping, or Persian digits. Jalali dates use Latin digits, with `J` identifying the calendar (`G` for Gregorian). Messages accept printable ASCII. The dashboard itself supports Persian labels. Full Persian messaging needs a graphical OLED/TFT and a suitable font renderer; do not expect it from this LCD.
 
@@ -40,7 +48,7 @@ The LED matrix is already on the UNO R4 WiFi. No wiring required. Use 2.4 GHz Wi
    docker compose -f compose.yaml -f compose.local.yaml up --build -d
    ```
 
-4. Open [localhost:3000](http://localhost:3000), sign in using `ADMIN_PASSWORD`.
+4. Open [localhost:3000](http://localhost:3000), sign in using `ADMIN_USERNAME` (default `husband`) and `ADMIN_PASSWORD`. Optionally set `PARTNER_PASSWORD` before the first launch to create both accounts, or create her account from **You & me**.
 
 By default HTTP and plaintext MQTT bind to loopback. To connect a physical board on a **trusted local network**, set `MQTT_BIND_ADDRESS` in `.env` to your computer’s LAN IP and restart Compose. Set the firmware’s `MQTT_HOST` to that LAN IP, `MQTT_TLS` to `0`, and `MQTT_PORT` to `1883`. Do not publish plaintext MQTT to the internet. For public deployment use the TLS setup in [docs/deployment.md](docs/deployment.md).
 
@@ -115,10 +123,10 @@ The simulator authenticates with the **device** account, subscribes to real MQTT
 - [Dokploy, TLS certificates, persistent data and backups](docs/deployment.md)
 - [Architecture, MQTT protocol, outage behavior and research](docs/architecture.md)
 
-This is a single-device, single-server application. Run **one app replica** against its SQLite volume and one configured device. Add per-device identities, storage, and broker ACLs before using it for a fleet.
+This is a shared-owner, single-device, single-server application. Run **one app replica** against its SQLite volume and one configured device. Add per-device identities, storage, and broker ACLs before using it for a fleet.
 
 ## Verification
 
-`npm run check` checks TypeScript, the production frontend build and 13 automated tests. `npm run test:integration` additionally checks real MQTT traffic against an **isolated disposable** stack; supply `TEST_ENV_FILE`, `TEST_HTTP_URL` and `TEST_MQTT_URL` when using addresses other than the verification defaults in that script. Never run it against your physical board or production data: it changes settings and sends messages.
+`npm run check` checks TypeScript, the production frontend build and the automated test suite. `npm run test:integration` additionally checks real MQTT traffic against an **isolated disposable** stack; supply `TEST_ENV_FILE`, `TEST_HTTP_URL` and `TEST_MQTT_URL` when using addresses other than the verification defaults in that script. Never run it against your physical board or production data: it changes settings and sends messages.
 
 Docker image build, local Compose startup, browser sign-in/message controls, native MQTT frame delivery, topic ACLs, invalid-password rejection, last-will status and TLS certificate acceptance/rejection were checked locally. The actual UNO/LCD have not been connected here. Local Arduino compilation was blocked by HTTP 403 responses from Arduino’s package download service. A firmware compile job is included in `.github/workflows/ci.yml`; run it or compile in Arduino IDE before uploading.

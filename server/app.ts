@@ -1,15 +1,33 @@
 import express, { type RequestHandler } from "express";
 import helmet from "helmet";
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { Config } from "./config.js";
 import type { Store } from "./store.js";
-import { messageSchema, settingsSchema, type Snapshot } from "../shared/model.js";
+import {
+  messageSchema,
+  settingsSchema,
+  createUserSchema,
+  updateUserSchema,
+  usernameSchema,
+  type Snapshot,
+} from "../shared/model.js";
 interface Runtime {
   snapshot: () => Snapshot;
   changed: () => void;
   listen: (fn: () => void) => () => void;
 }
 export function createApp(config: Config, store: Store, runtime: Runtime) {
+  // Bootstrap only an empty database. Environment variables never overwrite a
+  // password that either partner has changed through account management.
+  if (!store.users().length) {
+    store.createUser(config.ADMIN_USERNAME, config.ADMIN_NAME, config.ADMIN_PASSWORD);
+    if (config.PARTNER_PASSWORD)
+      store.createUser(
+        config.PARTNER_USERNAME,
+        config.PARTNER_NAME,
+        config.PARTNER_PASSWORD,
+      );
+  }
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", config.TRUST_PROXY);
@@ -21,6 +39,8 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
           "style-src": ["'self'", "'unsafe-inline'"],
           "connect-src": ["'self'"],
           "img-src": ["'self'", "data:"],
+          "worker-src": ["'self'"],
+          "upgrade-insecure-requests": config.COOKIE_SECURE === "true" ? [] : null,
         },
       },
       strictTransportSecurity: config.COOKIE_SECURE === "true" ? undefined : false,
@@ -33,41 +53,42 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
     next();
   });
   app.use("/api", (req, res, next) => {
-    if (!["GET", "HEAD", "OPTIONS"].includes(req.method) && req.headers.origin) {
-      const expected = config.APP_ORIGIN ?? `http://${req.headers.host}`;
-      if (req.headers.origin !== expected) {
-        res.status(403).json({ error: "Request origin is not allowed" });
-        return;
-      }
+    if (
+      !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
+      req.headers.origin &&
+      req.headers.origin !== (config.APP_ORIGIN ?? `http://${req.headers.host}`)
+    ) {
+      res.status(403).json({ error: "Request origin is not allowed" });
+      return;
     }
     next();
   });
-  const salt = randomBytes(16),
-    passwordHash = scryptSync(config.ADMIN_PASSWORD, salt, 64);
-  const sessions = new Map<string, number>(),
-    attempts = new Map<string, { count: number; until: number }>();
   const token = (req: express.Request) =>
     (req.headers.cookie ?? "")
       .split(";")
       .map((p) => p.trim())
       .find((p) => p.startsWith("mb_session="))
       ?.slice(11) ?? "";
-  const authenticated = (req: express.Request) =>
-    (sessions.get(token(req)) ?? 0) > Date.now();
+  const current = (req: express.Request) => store.sessionUser(token(req));
   const auth: RequestHandler = (req, res, next) => {
-    if (!authenticated(req)) {
+    const user = current(req);
+    if (!user) {
       res.status(401).json({ error: "Sign in to continue" });
       return;
     }
+    res.locals.user = user;
     next();
   };
+  const attempts = new Map<string, { count: number; until: number }>();
   const sweep = setInterval(() => {
-    const now = Date.now();
-    for (const [k, v] of sessions) if (v <= now) sessions.delete(k);
-    for (const [k, v] of attempts) if (v.until <= now) attempts.delete(k);
+    for (const [k, v] of attempts) if (v.until <= Date.now()) attempts.delete(k);
   }, 60000);
   sweep.unref();
-  app.get("/api/session", (req, res) => res.json({ authenticated: authenticated(req) }));
+  const duration = 30 * 86400000;
+  app.get("/api/session", (req, res) => {
+    const user = current(req);
+    res.json({ authenticated: !!user, user: user ?? null });
+  });
   app.post("/api/login", (req, res) => {
     const ip = req.ip ?? "unknown",
       now = Date.now();
@@ -77,41 +98,41 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
         res.status(429).json({ error: "Try again later" });
         return;
       }
-      entry = { count: 0, until: now + 15 * 60 * 1000 };
+      entry = { count: 0, until: now + 15 * 60000 };
       attempts.set(ip, entry);
     }
     if (++entry.count > 10) {
       res.status(429).json({ error: "Too many attempts. Try again in 15 minutes." });
       return;
     }
-    const password = req.body?.password;
-    if (
-      typeof password !== "string" ||
-      password.length > 256 ||
-      !timingSafeEqual(scryptSync(password, salt, 64), passwordHash)
-    ) {
-      res.status(401).json({ error: "Incorrect password" });
+    const parsed = usernameSchema.safeParse(req.body?.username),
+      password = req.body?.password;
+    const user =
+      parsed.success && typeof password === "string" && password.length <= 256
+        ? store.verifyUser(parsed.data, password)
+        : undefined;
+    if (!user) {
+      store.audit(null, "login.failed", {});
+      res.status(401).json({ error: "Incorrect username or password" });
       return;
     }
     attempts.delete(ip);
-    if (sessions.size >= 1000) {
-      res.status(429).json({ error: "Too many sessions" });
-      return;
-    }
     const id = randomBytes(32).toString("hex");
-    sessions.set(id, now + 12 * 3600 * 1000);
+    store.createSession(id, user, now + duration);
+    store.audit(user, "login.succeeded");
     res
       .cookie("mb_session", id, {
         httpOnly: true,
         secure: config.COOKIE_SECURE === "true",
         sameSite: "strict",
-        maxAge: 12 * 3600 * 1000,
+        maxAge: duration,
         path: "/api",
       })
-      .json({ ok: true });
+      .json({ ok: true, user });
   });
   app.post("/api/logout", auth, (req, res) => {
-    sessions.delete(token(req));
+    store.revokeSession(token(req));
+    store.audit(res.locals.user, "logout");
     res
       .clearCookie("mb_session", {
         path: "/api",
@@ -123,14 +144,31 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
   });
   app.get("/api/state", auth, (_req, res) => res.json(runtime.snapshot()));
   app.put("/api/settings", auth, (req, res) => {
-    const s = settingsSchema.safeParse(req.body);
-    if (!s.success) {
-      res.status(400).json({ error: s.error.issues.map((i) => i.message).join("; ") });
+    const parsed = settingsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: parsed.error.issues.map((i) => i.message).join("; ") });
       return;
     }
-    store.saveSettings(s.data);
-    runtime.changed();
-    res.json(s.data);
+    if (parsed.data.love.startAt && Date.parse(parsed.data.love.startAt) > Date.now()) {
+      res.status(400).json({ error: "Choose a starting moment in the past" });
+      return;
+    }
+    const expected = req.headers["if-match"];
+    if (typeof expected !== "string" || !/^\d+$/.test(expected)) {
+      res
+        .status(428)
+        .json({ error: "Reload the settings before saving (revision required)" });
+      return;
+    }
+    try {
+      const revision = store.saveSettings(parsed.data, res.locals.user, Number(expected));
+      runtime.changed();
+      res.json({ settings: parsed.data, revision });
+    } catch (e) {
+      res.status(409).json({ error: (e as Error).message });
+    }
   });
   app.post("/api/messages", auth, (req, res) => {
     const m = messageSchema.safeParse(req.body);
@@ -139,20 +177,101 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
       return;
     }
     try {
-      const saved = store.enqueue(m.data.text, m.data.duration);
+      const saved = store.enqueue(
+        m.data.text,
+        m.data.duration,
+        Date.now(),
+        res.locals.user,
+      );
       runtime.changed();
       res.status(201).json(saved);
-    } catch (error) {
-      res.status(409).json({ error: (error as Error).message });
+    } catch (e) {
+      res.status(409).json({ error: (e as Error).message });
+    }
+  });
+  const cursor = (req: express.Request) => {
+    if (req.query.before === undefined) return Number.MAX_SAFE_INTEGER;
+    const value = Number(req.query.before);
+    return Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  };
+  app.get("/api/messages", auth, (req, res) => {
+    const before = cursor(req);
+    if (
+      before === undefined ||
+      typeof (req.query.q ?? "") !== "string" ||
+      String(req.query.q ?? "").length > 160
+    ) {
+      res.status(400).json({ error: "Invalid history filter" });
+      return;
+    }
+    res.json(store.history(before, String(req.query.q ?? "")));
+  });
+  app.post("/api/messages/:id/replay", auth, (req, res) => {
+    const message = store.message(String(req.params.id));
+    if (!message) {
+      res.status(404).json({ error: "Message not found" });
+      return;
+    }
+    try {
+      const saved = store.enqueue(
+        message.text,
+        Math.min(300, Math.max(5, (message.expiresAt - message.startsAt) / 1000)),
+        Date.now(),
+        res.locals.user,
+      );
+      runtime.changed();
+      res.status(201).json(saved);
+    } catch (e) {
+      res.status(409).json({ error: (e as Error).message });
     }
   });
   app.delete("/api/messages/:id", auth, (req, res) => {
-    if (!store.cancel(String(req.params.id))) {
+    if (!store.cancel(String(req.params.id), res.locals.user)) {
       res.status(404).json({ error: "Message not found" });
       return;
     }
     runtime.changed();
     res.json({ ok: true });
+  });
+  app.get("/api/users", auth, (_req, res) => res.json({ items: store.users() }));
+  app.post("/api/users", auth, (req, res) => {
+    const parsed = createUserSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: parsed.error.issues.map((i) => i.message).join("; ") });
+      return;
+    }
+    try {
+      const u = parsed.data;
+      res
+        .status(201)
+        .json(store.createUser(u.username, u.name, u.password, res.locals.user));
+    } catch (e) {
+      res.status(409).json({ error: (e as Error).message });
+    }
+  });
+  app.patch("/api/users/:id", auth, (req, res) => {
+    const parsed = updateUserSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res
+        .status(400)
+        .json({ error: parsed.error.issues.map((i) => i.message).join("; ") });
+      return;
+    }
+    try {
+      res.json(store.updateUser(String(req.params.id), parsed.data, res.locals.user));
+    } catch (e) {
+      res.status(409).json({ error: (e as Error).message });
+    }
+  });
+  app.get("/api/activity", auth, (req, res) => {
+    const before = cursor(req);
+    if (before === undefined) {
+      res.status(400).json({ error: "Invalid activity cursor" });
+      return;
+    }
+    res.json(store.activity(before));
   });
   let clients = 0;
   app.get("/api/events", auth, (req, res) => {
@@ -169,7 +288,7 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
     });
     res.flushHeaders();
     const send = () => {
-      if (!authenticated(req)) {
+      if (!current(req)) {
         res.end();
         return;
       }
@@ -182,6 +301,10 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
       clients--;
       unsubscribe();
     });
+  });
+  app.get("/sw.js", (_req, res) => {
+    res.set({ "Cache-Control": "no-cache", "Service-Worker-Allowed": "/" });
+    res.sendFile("sw.js", { root: "dist" });
   });
   app.use(express.static("dist"));
   app.use("/api", (_req, res) => res.status(404).json({ error: "Unknown endpoint" }));

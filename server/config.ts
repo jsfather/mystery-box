@@ -1,6 +1,20 @@
 import { z } from "zod";
 const schema = z.object({
   ADMIN_PASSWORD: z.string().min(16, "ADMIN_PASSWORD must be at least 16 characters"),
+  ADMIN_USERNAME: z
+    .string()
+    .regex(/^[a-z0-9_-]{3,32}$/)
+    .default("husband"),
+  ADMIN_NAME: z.string().trim().min(1).max(60).default("My love"),
+  PARTNER_USERNAME: z
+    .string()
+    .regex(/^[a-z0-9_-]{3,32}$/)
+    .default("wife"),
+  PARTNER_NAME: z.string().trim().min(1).max(60).default("My person"),
+  PARTNER_PASSWORD: z.preprocess(
+    (v) => (v === "" ? undefined : v),
+    z.string().min(16).max(256).optional(),
+  ),
   MQTT_PASSWORD: z
     .string()
     .min(16, "Set MQTT_PASSWORD to the MQTT server account password"),
@@ -25,6 +39,8 @@ export function readConfig(env = process.env): Config {
       parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("\n"),
     );
   const c = parsed.data;
+  if (c.ADMIN_USERNAME === c.PARTNER_USERNAME)
+    throw new Error("Choose different usernames for the two accounts");
   if (!/^mqtts?:\/\//.test(c.MQTT_URL))
     throw new Error("MQTT_URL must use mqtt:// or mqtts://");
   if (

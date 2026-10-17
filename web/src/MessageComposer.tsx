@@ -1,0 +1,73 @@
+import { useState } from "react";
+import { LoaderCircle, Send } from "lucide-react";
+export function MessageComposer({
+  onSend,
+  compact = false,
+}: {
+  onSend: (text: string, duration: number) => Promise<void>;
+  compact?: boolean;
+}) {
+  const [text, setText] = useState(""),
+    [duration, setDuration] = useState(15),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  return (
+    <form
+      className="composer"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError("");
+        try {
+          await onSend(text, duration);
+          setText("");
+        } catch (e) {
+          setError((e as Error).message);
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <div className="textarea-wrap">
+        <textarea
+          aria-label="Message text"
+          placeholder="Hello, world. Or just someone special…"
+          maxLength={160}
+          required
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={compact ? 2 : 4}
+        />
+        <span>{text.length}/160</span>
+      </div>
+      <p className="input-note">
+        Latin letters & numbers · Long messages scroll automatically.
+      </p>
+      {error && (
+        <p role="alert" className="error">
+          {error}
+        </p>
+      )}
+      <div className="composer-actions">
+        <label>
+          Show for{" "}
+          <select
+            aria-label="Message duration"
+            value={duration}
+            onChange={(e) => setDuration(+e.target.value)}
+          >
+            {[5, 15, 30, 60, 120, 300].map((v) => (
+              <option key={v} value={v}>
+                {v} seconds
+              </option>
+            ))}
+          </select>
+        </label>
+        <button disabled={busy || !text.trim()} className="primary">
+          {busy ? <LoaderCircle size={16} className="spin" /> : <Send size={15} />}
+          Send message
+        </button>
+      </div>
+    </form>
+  );
+}

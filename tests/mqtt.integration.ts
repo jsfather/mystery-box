@@ -19,14 +19,23 @@ const base = `mystery-box/${env.DEVICE_ID ?? "uno-r4"}`;
 const login = await fetch(url + "/api/login", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
-  body: JSON.stringify({ password: env.ADMIN_PASSWORD }),
+  body: JSON.stringify({
+    username: env.ADMIN_USERNAME ?? "husband",
+    password: env.ADMIN_PASSWORD,
+  }),
 });
 assert.equal(login.status, 200);
 const cookie = login.headers.get("set-cookie")!.split(";")[0];
-async function api(path: string, method = "GET", body?: unknown) {
+async function api(path: string, method = "GET", body?: unknown): Promise<any> {
+  const revision =
+    path === "settings" ? (await api("state")).settingsRevision : undefined;
   const response = await fetch(url + "/api/" + path, {
     method,
-    headers: { Cookie: cookie, "Content-Type": "application/json" },
+    headers: {
+      Cookie: cookie,
+      "Content-Type": "application/json",
+      ...(revision !== undefined ? { "If-Match": String(revision) } : {}),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   assert.ok(response.ok, `${path}: ${response.status}`);
@@ -118,6 +127,22 @@ try {
     (f) => !!f && f.clock,
   );
   console.log("PASS message and cancellation reach device");
+  const loveStart = "2020-02-14T14:49:20.000Z";
+  await api("settings", "PUT", {
+    ...defaults,
+    displayMode: "love",
+    love: { ...defaults.love, startAt: loveStart },
+  });
+  await until(
+    async () => latest,
+    (frame) =>
+      !!frame &&
+      frame.love &&
+      frame.loveEnabled &&
+      frame.loveSince === Date.parse(loveStart) / 1000,
+  );
+  assert.match(latest!.line2, /\d+d \d{2}:\d{2}:\d{2}/);
+  console.log("PASS love counter and offline starting instant reach MQTT device");
   await device.publishAsync(`${base}/frame`, JSON.stringify({ unauthorized: true }), {
     qos: 0,
   });

@@ -15,13 +15,20 @@ Do not commit the rendered configuration with interpolated secrets. The reposito
 Configure environment variables in Dokploy:
 
 ```dotenv
+ADMIN_USERNAME=husband
+ADMIN_NAME=Your name
 ADMIN_PASSWORD=<independent-random-password-at-least-16-characters>
+PARTNER_USERNAME=wife
+PARTNER_NAME=Her name
+PARTNER_PASSWORD=<another-independent-password-at-least-16-characters>
 MQTT_SERVER_PASSWORD=<different-random-password-at-least-16-characters>
 MQTT_DEVICE_PASSWORD=<different-random-password-at-least-16-characters>
 DEVICE_ID=uno-r4
 APP_ORIGIN=https://clock.example.com
 MQTT_CERT_DIR=/opt/mystery-box/certs
 ```
+
+Account variables initialize an empty database only; existing accounts are managed from **You & me**. Both accounts have equal owner access. `PARTNER_PASSWORD` may be omitted to create her account in the UI instead. See [the shared setup guide](our-story.md).
 
 Generate each password separately with `openssl rand -hex 24`. Use the device password only in the firmware. Keep the server password on the server. The app deliberately refuses an insecure production origin/cookie configuration.
 
@@ -79,11 +86,11 @@ Browser preview is the server’s intended frame, **not a hardware screenshot or
 
 ## Persistent data and updates
 
-Keep the `app-data` named volume across redeploys. It stores settings and the last 100 message records. Do not use `docker compose down -v` unless you intend to delete this data. Sessions are memory-only; a restart signs administrators out. Broker persistence is deliberately disabled: it has no business data, and retaining old animation/message frames would be wrong.
+Keep the `app-data` named volume across redeploys. It stores settings, the full message archive, accounts, hashed sessions, and the activity journal. Do not use `docker compose down -v` unless you intend to delete this data. Sessions are stored as token hashes, last up to 30 days, and survive restarts. Password resets, disabling an account, or signing out revoke the affected sessions. Broker persistence is deliberately disabled: it has no business data, and retaining old animation/message frames would be wrong.
 
-Back up SQLite through its backup API or stop the app before copying the entire data directory, including WAL files. A consistent copy of only a live `.sqlite` file is not guaranteed. Treat the backup as private: message text is stored unencrypted. Restore with the app stopped, preserving ownership for the Node user (UID 1000).
+Back up SQLite through its backup API or stop the app before copying the entire data directory, including WAL files. A consistent copy of only a live `.sqlite` file is not guaranteed. Treat the backup as private: message text, names and your special date are stored unencrypted. Passwords are scrypt hashes; sessions are token hashes. Restore with the app stopped, preserving ownership for the Node user (UID 1000).
 
-Deploy one app replica. Rolling two replicas simultaneously would create competing frame publishers and independent sessions. Use stop/start replacement for this single-device setup. MQTT clients reconnect automatically after broker or app restarts.
+Deploy one app replica. Rolling two replicas simultaneously would create competing frame publishers and separate in-memory rate limits. Use stop/start replacement for this single-device setup. MQTT clients reconnect automatically after broker or app restarts.
 
 Rotate credentials by updating Dokploy environment variables, redeploying the broker/app, and updating the device secrets and sketch. Rotating only the device credential does not require changing the administrator password.
 
@@ -92,3 +99,5 @@ Rotate credentials by updating Dokploy environment variables, redeploying the br
 - [Dokploy Compose domains and Traefik](https://docs.dokploy.com/docs/core/troubleshooting/domains)
 - [Dokploy domain configuration](https://docs.dokploy.com/docs/core/domains)
 - [Mosquitto configuration: TLS, passwords and topic ACLs](https://mosquitto.org/man/mosquitto-conf-5.html)
+
+The iPhone PWA requires the same HTTPS dashboard domain. The app serves its manifest, Apple touch icon and generated service worker from that origin. Do not add proxy rules that cache `/api/*`; private API responses use `Cache-Control: no-store`.

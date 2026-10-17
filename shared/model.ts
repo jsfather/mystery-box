@@ -5,6 +5,28 @@ export const printable = z
     /^[\x20-\x7e]*$/,
     "Use Latin letters, digits and ASCII punctuation; this LCD has no Persian font.",
   );
+export const timezoneSchema = z
+  .string()
+  .max(80)
+  .refine((value) => {
+    try {
+      new Intl.DateTimeFormat("en", { timeZone: value });
+      return true;
+    } catch {
+      return false;
+    }
+  }, "Choose a valid IANA timezone");
+export const loveSchema = z
+  .object({
+    names: z.string().trim().min(1).max(80).default("You & me"),
+    startAt: z.iso
+      .datetime({ offset: true })
+      .refine((s) => Date.parse(s) >= 0, "Choose a date from 1970 onwards")
+      .nullable(),
+    timezone: timezoneSchema,
+    title: printable.trim().min(1).max(16),
+  })
+  .strict();
 export const settingsSchema = z
   .object({
     timezone: z
@@ -18,6 +40,13 @@ export const settingsSchema = z
           return false;
         }
       }, "Choose a valid IANA timezone"),
+    displayMode: z.enum(["clock", "love", "alternate"]).default("clock"),
+    love: loveSchema.default({
+      startAt: null,
+      timezone: "Asia/Tehran",
+      title: "YOU & ME <3",
+      names: "You & me",
+    }),
     calendar: z.enum(["persian", "gregory"]),
     dateOrder: z.enum(["ymd", "dmy", "mdy"]),
     hour12: z.boolean(),
@@ -35,9 +64,24 @@ export const settingsSchema = z
       })
       .strict(),
   })
-  .strict();
+  .strict()
+  .superRefine((s, ctx) => {
+    if (s.displayMode !== "clock" && !s.love.startAt)
+      ctx.addIssue({
+        code: "custom",
+        path: ["love", "startAt"],
+        message: "Set your special moment before enabling the love timer",
+      });
+  });
 export type Settings = z.infer<typeof settingsSchema>;
 export const defaults: Settings = {
+  displayMode: "clock",
+  love: {
+    startAt: null,
+    timezone: "Asia/Tehran",
+    title: "YOU & ME <3",
+    names: "You & me",
+  },
   timezone: "Asia/Tehran",
   calendar: "persian",
   dateOrder: "ymd",
@@ -67,6 +111,9 @@ export interface Message {
   expiresAt: number;
   createdAt: number;
   cancelled: boolean;
+  authorId?: string | null;
+  authorName?: string;
+  cursor?: number;
 }
 export interface Frame {
   v: 1;
@@ -81,6 +128,10 @@ export interface Frame {
   hour12: boolean;
   seconds: boolean;
   dateKey: number;
+  love: boolean;
+  loveSince: number;
+  loveEnabled: boolean;
+  loveTitle: string;
 }
 export interface Device {
   online: boolean;
@@ -98,4 +149,48 @@ export interface Snapshot {
   messages: Message[];
   serverTime: number;
   deviceId: string;
+  settingsRevision: number;
 }
+
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  enabled: boolean;
+  createdAt: number;
+}
+export interface ActivityEntry {
+  id: number;
+  createdAt: number;
+  actorId: string | null;
+  actorName: string;
+  action: string;
+  details: Record<string, unknown>;
+}
+export const usernameSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9_-]{3,32}$/, "Username: 3–32 Latin letters, digits, _ or -");
+export const nameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(60)
+  .regex(/^[^\x00-\x1f\x7f]*$/, "Use a readable display name");
+export const passwordSchema = z
+  .string()
+  .min(16, "Use a password of at least 16 characters")
+  .max(256);
+export const createUserSchema = z
+  .object({ username: usernameSchema, name: nameSchema, password: passwordSchema })
+  .strict();
+export const updateUserSchema = z
+  .object({
+    username: usernameSchema.optional(),
+    name: nameSchema.optional(),
+    enabled: z.boolean().optional(),
+    password: passwordSchema.optional(),
+    currentPassword: z.string().max(256).optional(),
+  })
+  .strict();

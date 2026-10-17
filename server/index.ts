@@ -47,18 +47,28 @@ const telemetry = z.object({
 });
 client.on("connect", () => {
   broker = true;
+  store.audit(null, "broker.connected");
   client.subscribe([`${base}/status`, `${base}/hello`], { qos: 1 });
   console.log("MQTT connected");
 });
 client.on("offline", () => {
+  if (broker) store.audit(null, "broker.disconnected");
   broker = false;
   device.online = false;
 });
 client.on("close", () => {
+  if (broker) store.audit(null, "broker.disconnected");
   broker = false;
   device.online = false;
 });
+let lastBrokerErrorAt = 0;
 client.on("error", () => {
+  if (Date.now() - lastBrokerErrorAt >= 60000) {
+    store.audit(null, "broker.error", {
+      message: "MQTT connection failed; check broker address and credentials",
+    });
+    lastBrokerErrorAt = Date.now();
+  }
   broker = false;
   console.error(
     "MQTT connection failed; retrying. Check broker address and credentials.",
@@ -93,7 +103,14 @@ function publish() {
       retain: false,
     });
 }
+let wasOnline = false;
+store.audit(null, "server.started");
 const timer = setInterval(() => {
+  const online = broker && device.online && Date.now() - (device.lastSeen ?? 0) < 45000;
+  if (online !== wasOnline) {
+    store.audit(null, online ? "device.online" : "device.offline");
+    wasOnline = online;
+  }
   publish();
   for (const fn of listeners) fn();
 }, 200);
@@ -108,6 +125,7 @@ const snapshot = (): Snapshot => ({
   messages,
   serverTime: Date.now(),
   deviceId: config.DEVICE_ID,
+  settingsRevision: store.revision(),
 });
 const app = createApp(config, store, {
   snapshot,
@@ -130,6 +148,7 @@ function shutdown() {
   server.close();
   server.closeAllConnections();
   client.end(true);
+  store.audit(null, "server.stopped");
   store.close();
   process.exit(0);
 }

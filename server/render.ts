@@ -1,3 +1,4 @@
+import { elapsedLove } from "../shared/love.js";
 import type { Frame, Message, Settings } from "../shared/model.js";
 const center = (text: string) =>
   text
@@ -195,6 +196,17 @@ export function render(
   );
   let line1 = center(c.time),
     line2 = center(c.date + (s.calendar === "persian" ? " J" : " G"));
+  const love =
+    !!s.love.startAt &&
+    (s.displayMode === "love" ||
+      (s.displayMode === "alternate" && Math.floor(now / 12000) % 2 === 1));
+  if (love) {
+    const elapsed = elapsedLove(s.love.startAt!, now);
+    line1 = center(s.love.title);
+    line2 = center(
+      `${elapsed.days}d ${String(elapsed.hours).padStart(2, "0")}:${String(elapsed.minutes).padStart(2, "0")}:${String(elapsed.seconds).padStart(2, "0")}`,
+    );
+  }
   if (active) {
     const rows = active.text.match(/.{1,16}/g) ?? [];
     if (active.text.length > 16 && active.text.length <= 32) {
@@ -223,7 +235,11 @@ export function render(
     line2,
     backlight: s.backlight,
     matrix: matrixFrame(s.matrix, now),
-    clock: !active,
+    clock: !active && !love,
+    love: love && !active,
+    loveEnabled: !!s.love.startAt && s.displayMode !== "clock",
+    loveSince: s.love.startAt ? Math.floor(Date.parse(s.love.startAt) / 1000) : 0,
+    loveTitle: s.love.title,
     hour12: s.hour12,
     seconds: s.showSeconds,
     dateKey: c.dateKey,
