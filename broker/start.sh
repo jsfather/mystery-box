@@ -14,10 +14,12 @@ mosquitto_passwd -b /mosquitto/generated/passwords device "$MQTT_DEVICE_PASSWORD
 cat > /mosquitto/generated/acl <<ACL
 user server
 topic write mystery-box/$DEVICE_ID/frame
+topic write mystery-box/$DEVICE_ID/matrix
 topic read mystery-box/$DEVICE_ID/status
 topic read mystery-box/$DEVICE_ID/hello
 user device
 topic read mystery-box/$DEVICE_ID/frame
+topic read mystery-box/$DEVICE_ID/matrix
 topic write mystery-box/$DEVICE_ID/status
 topic write mystery-box/$DEVICE_ID/hello
 ACL

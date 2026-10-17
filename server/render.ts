@@ -1,6 +1,5 @@
 import { loveLine, storyVisible, wallTime } from "../shared/love.js";
 import type { Frame, Message, Settings } from "../shared/model.js";
-import { heartbeatPixels } from "../shared/heartbeat.js";
 const center = (text: string) =>
   text
     .slice(0, 16)
@@ -48,128 +47,8 @@ export function clockParts(now: number, s: Settings) {
     dateKey: Math.floor((Math.floor(now / 1000) + offset) / 86400),
   };
 }
-// Compact 5x7 font: each value is a row, bit 4 is the leftmost pixel.
-const glyphs: Record<string, number[]> = {
-  " ": [0, 0, 0, 0, 0, 0, 0],
-  A: [14, 17, 17, 31, 17, 17, 17],
-  B: [30, 17, 17, 30, 17, 17, 30],
-  C: [14, 17, 16, 16, 16, 17, 14],
-  D: [30, 17, 17, 17, 17, 17, 30],
-  E: [31, 16, 16, 30, 16, 16, 31],
-  F: [31, 16, 16, 30, 16, 16, 16],
-  G: [14, 17, 16, 23, 17, 17, 15],
-  H: [17, 17, 17, 31, 17, 17, 17],
-  I: [14, 4, 4, 4, 4, 4, 14],
-  J: [7, 2, 2, 2, 18, 18, 12],
-  K: [17, 18, 20, 24, 20, 18, 17],
-  L: [16, 16, 16, 16, 16, 16, 31],
-  M: [17, 27, 21, 21, 17, 17, 17],
-  N: [17, 25, 21, 19, 17, 17, 17],
-  O: [14, 17, 17, 17, 17, 17, 14],
-  P: [30, 17, 17, 30, 16, 16, 16],
-  Q: [14, 17, 17, 17, 21, 18, 13],
-  R: [30, 17, 17, 30, 20, 18, 17],
-  S: [15, 16, 16, 14, 1, 1, 30],
-  T: [31, 4, 4, 4, 4, 4, 4],
-  U: [17, 17, 17, 17, 17, 17, 14],
-  V: [17, 17, 17, 17, 17, 10, 4],
-  W: [17, 17, 17, 21, 21, 21, 10],
-  X: [17, 17, 10, 4, 10, 17, 17],
-  Y: [17, 17, 10, 4, 4, 4, 4],
-  Z: [31, 1, 2, 4, 8, 16, 31],
-  "0": [14, 17, 19, 21, 25, 17, 14],
-  "1": [4, 12, 4, 4, 4, 4, 14],
-  "2": [14, 17, 1, 2, 4, 8, 31],
-  "3": [30, 1, 1, 14, 1, 1, 30],
-  "4": [2, 6, 10, 18, 31, 2, 2],
-  "5": [31, 16, 16, 30, 1, 1, 30],
-  "6": [14, 16, 16, 30, 17, 17, 14],
-  "7": [31, 1, 2, 4, 8, 8, 8],
-  "8": [14, 17, 17, 14, 17, 17, 14],
-  "9": [14, 17, 17, 15, 1, 1, 14],
-  "!": [4, 4, 4, 4, 4, 0, 4],
-  "?": [14, 17, 1, 2, 4, 0, 4],
-  ".": [0, 0, 0, 0, 0, 0, 4],
-  ":": [0, 4, 0, 0, 4, 0, 0],
-  "-": [0, 0, 0, 31, 0, 0, 0],
-  "/": [1, 2, 2, 4, 8, 8, 16],
-  "+": [0, 4, 4, 31, 4, 4, 0],
-  "=": [0, 0, 31, 0, 31, 0, 0],
-  _: [0, 0, 0, 0, 0, 0, 31],
-  ",": [0, 0, 0, 0, 0, 4, 8],
-  "'": [4, 4, 0, 0, 0, 0, 0],
-  '"': [10, 10, 0, 0, 0, 0, 0],
-  "(": [2, 4, 8, 8, 8, 4, 2],
-  ")": [8, 4, 2, 2, 2, 4, 8],
-  "#": [10, 31, 10, 10, 31, 10, 0],
-  "%": [17, 2, 4, 8, 17, 0, 0],
-  "&": [12, 18, 20, 8, 21, 18, 13],
-  "*": [0, 21, 14, 31, 14, 21, 0],
-  "<": [2, 4, 8, 16, 8, 4, 2],
-  ">": [8, 4, 2, 1, 2, 4, 8],
-  "@": [14, 17, 23, 21, 23, 16, 14],
-  "[": [14, 8, 8, 8, 8, 8, 14],
-  "]": [14, 2, 2, 2, 2, 2, 14],
-  "\\": [16, 8, 8, 4, 2, 2, 1],
-  "^": [4, 10, 17, 0, 0, 0, 0],
-  "`": [8, 4, 0, 0, 0, 0, 0],
-  "{": [2, 4, 4, 8, 4, 4, 2],
-  "}": [8, 4, 4, 2, 4, 4, 8],
-  "|": [4, 4, 4, 4, 4, 4, 4],
-  "~": [0, 0, 8, 21, 2, 0, 0],
-  ";": [0, 4, 0, 0, 4, 8, 0],
-  $: [4, 15, 20, 14, 5, 30, 4],
-};
-export function encodePixels(pixels: number[]): string {
-  let hex = "";
-  for (let i = 0; i < 96; i += 4)
-    hex += (
-      (pixels[i] << 3) |
-      (pixels[i + 1] << 2) |
-      (pixels[i + 2] << 1) |
-      pixels[i + 3]
-    ).toString(16);
-  return hex;
-}
-export function decodePixels(hex: string): number[] {
-  return [...hex].flatMap((c) => [3, 2, 1, 0].map((b) => (parseInt(c, 16) >> b) & 1));
-}
-export function matrixFrame(s: Settings["matrix"], now: number): string {
-  if (s.mode === "heart") return encodePixels(heartbeatPixels(now, s.speed));
-  const step = Math.floor(now / Math.max(200, 600 - s.speed * 45));
-  if (s.mode === "off") return "0".repeat(24);
-  if (s.mode === "custom") return s.frames[step % s.frames.length];
-  const p = Array<number>(96).fill(0);
-  const set = (x: number, y: number) => {
-    if (x >= 0 && x < 12 && y >= 0 && y < 8) p[y * 12 + x] = 1;
-  };
-  if (s.mode === "wave") {
-    for (let x = 0; x < 12; x++) {
-      set(x, Math.round(3.5 + 3 * Math.sin((x + step) * 0.6)));
-    }
-  } else if (s.mode === "rain") {
-    for (let x = 0; x < 12; x += 2) {
-      const y = (step + x * 7) % 11;
-      set(x, y);
-      set(x, y - 1);
-      set(x, y - 2);
-    }
-  } else {
-    const text = s.text.toUpperCase() + "   ";
-    const shift = (step % (text.length * 6 + 12)) - 12;
-    for (let x = 0; x < 12; x++) {
-      const at = x + shift;
-      if (at < 0 || at >= text.length * 6) continue;
-      const g = glyphs[text[Math.floor(at / 6)]] ?? glyphs["?"];
-      const col = at % 6;
-      if (col < 5)
-        g.forEach((r, y) => {
-          if ((r >> (4 - col)) & 1) set(x, y);
-        });
-    }
-  }
-  return encodePixels(p);
-}
+export { encodePixels, decodePixels, matrixFrame } from "../shared/matrix.js";
+import { matrixFrame } from "../shared/matrix.js";
 export function render(
   s: Settings,
   messages: Message[],

@@ -15,6 +15,7 @@
 #include "calendar_counter.h"
 #include "steady_clock.h"
 #include "heartbeat.h"
+#include "matrix_program.h"
 
 #if MQTT_TLS
 WiFiSSLClient transport;
@@ -27,6 +28,9 @@ ArduinoLEDMatrix matrix;
 const char FRAME_TOPIC[] = "mystery-box/" DEVICE_ID "/frame";
 const char STATUS_TOPIC[] = "mystery-box/" DEVICE_ID "/status";
 const char HELLO_TOPIC[] = "mystery-box/" DEVICE_ID "/hello";
+const char MATRIX_TOPIC[] = "mystery-box/" DEVICE_ID "/matrix";
+uint32_t matrixFrames[512][4], matrixRevision = 0;
+bool matrixProgramReady = false;
 uint32_t lastFrameAt = 0, lastTelemetryAt = 0;
 uint32_t nextAttempt = 0, retryMs = 1000, lastSeq = 0, lastLocalDraw = 0;
 uint32_t lastWifiCheck = 0, lastMqttPoll = 0;
@@ -93,7 +97,45 @@ bool lcdLine(const char* text) {
   return true;
 }
 
+void receivedMatrix(byte* payload, unsigned int length) {
+  if(length>1024) return;
+  JsonDocument doc;
+  if(deserializeJson(doc,payload,length) || (doc["v"]|0)!=1 || !doc["revision"].is<uint32_t>())return;
+  const uint32_t revision=doc["revision"].as<uint32_t>();
+  if(matrixProgramReady && revision==matrixRevision)return;
+  const char* mode=doc["mode"]|"", *text=doc["text"]|"";
+  const int speed=doc["speed"]|0;
+  if(speed<1||speed>10||strlen(text)>80)return;
+  for(unsigned i=0;i<strlen(text);i++)if(text[i]<32||text[i]>126)return;
+  if(strcmp(mode,"heart")&&strcmp(mode,"off")&&strcmp(mode,"text")&&strcmp(mode,"custom")&&MatrixProgram::presetIndex(mode)<0)return;
+  const char* custom[32];
+  const JsonArray array=doc["frames"].as<JsonArray>();
+  const unsigned count=array.size();
+  if(count>32 || (!strcmp(mode,"custom") && count==0))return;
+  for(unsigned f=0;f<count;f++) {
+    custom[f]=array[f]|"";
+    if(strlen(custom[f])!=24)return;
+    for(int i=0;i<24;i++)if(hexValue(custom[f][i])<0)return;
+  }
+  // Stop only while replacing the sequence. Steady playback thereafter is
+  // handled entirely by the matrix hardware timer, including during reconnects.
+  noInterrupts();
+  matrix.autoscroll(0);
+  interrupts();
+  const uint16_t frames=MatrixProgram::build(mode,speed,text,custom,count,matrixFrames);
+  noInterrupts();
+  matrix.loadWrapper(matrixFrames,frames*sizeof(matrixFrames[0]));
+  matrix.play(true);
+  interrupts();
+  matrixProgramReady=true;
+  matrixRevision=revision;
+  Serial.print("Local matrix program: "); Serial.print(mode);
+  Serial.print("; frames: "); Serial.print(frames);
+  Serial.print("; revision: "); Serial.println(revision);
+}
+
 void received(char* topic, byte* payload, unsigned int length) {
+  if(!strcmp(topic,MATRIX_TOPIC)) { receivedMatrix(payload,length); return; }
   if (strcmp(topic, FRAME_TOPIC) != 0 || length > 768) return;
   JsonDocument doc;
   if (deserializeJson(doc, payload, length) || doc["v"].as<int>() != 1) return;
@@ -147,7 +189,7 @@ void received(char* topic, byte* payload, unsigned int length) {
   localHeart = doc["heart"] | false;
   heartSpeed = doc["heartSpeed"] | 5;
   if (heartSpeed < 1 || heartSpeed > 10) heartSpeed = 5;
-  if (localHeart && (!wasHeart || heartSpeed != playingHeartSpeed)) {
+  if (!matrixProgramReady && localHeart && (!wasHeart || heartSpeed != playingHeartSpeed)) {
     // The LED library advances sequences in its hardware timer ISR. Stop it
     // while replacing the persistent frame buffer, then play independently of Wi-Fi.
     noInterrupts();
@@ -159,7 +201,7 @@ void received(char* topic, byte* payload, unsigned int length) {
     matrix.play(true);
     interrupts();
     playingHeartSpeed = heartSpeed;
-  } else if (!localHeart && wasHeart) {
+  } else if (!matrixProgramReady && !localHeart && wasHeart) {
     noInterrupts();
     matrix.autoscroll(0);
     interrupts();
@@ -180,7 +222,7 @@ void received(char* topic, byte* payload, unsigned int length) {
     if (!clockTop) row(0, a);
     row(1, b);
   }
-  if (!localHeart) {
+  if (!matrixProgramReady && !localHeart) {
     for (uint8_t i = 0; i < 96; i++) {
       pixels[i / 12][i % 12] = (hexValue(hex[i / 4]) >> (3 - i % 4)) & 1;
     }
@@ -196,7 +238,8 @@ void telemetry() {
   doc["online"] = true;
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
-  doc["firmware"] = "1.2.0";
+  doc["firmware"] = "1.3.0";
+  doc["matrixRevision"] = matrixRevision;
   doc["seq"] = lastSeq;
   char buffer[224];
   serializeJson(doc, buffer, sizeof(buffer));
@@ -310,7 +353,7 @@ void setup() {
 #endif
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(received);
-  if (!mqtt.setBufferSize(1024)) Serial.println("MQTT buffer allocation failed");
+  if (!mqtt.setBufferSize(1536)) Serial.println("MQTT buffer allocation failed");
   mqtt.setKeepAlive(20);
   mqtt.setSocketTimeout(2);
   WiFi.setTimeout(2000);
@@ -347,6 +390,7 @@ void loop() {
         Serial.println(WiFi.firmwareVersion());
         Serial.println(lcdReady ? "LCD ready" : "LCD not found");
         mqtt.subscribe(FRAME_TOPIC, 0);
+        mqtt.subscribe(MATRIX_TOPIC, 1);
         mqtt.publish(HELLO_TOPIC, "{}", false);
         telemetry();
         retryMs = 1000;

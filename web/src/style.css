@@ -925,6 +925,26 @@ footer > span {
   gap: 9px;
   margin-top: 25px;
 }
+.animation-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 16px 0;
+}
+.animation-categories button {
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 7px 12px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.animation-categories button[aria-pressed="true"] {
+  background: var(--green);
+  color: var(--canvas);
+}
 .mode-grid > button {
   display: flex;
   align-items: center;

@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import mqtt from "mqtt";
 import { setTimeout as pause } from "node:timers/promises";
 import { defaults, type Frame } from "../shared/model.js";
+import { matrixProgram } from "../shared/matrix.js";
 const env = Object.fromEntries(
   readFileSync(process.env.TEST_ENV_FILE ?? "/tmp/mystery-box-verification.env", "utf8")
     .split("\n")
@@ -56,6 +57,7 @@ async function until<T>(
 }
 let latest: Frame | undefined,
   forged = false;
+let program: ReturnType<typeof matrixProgram> | undefined;
 const device = await mqtt.connectAsync(broker, {
   username: "device",
   password: env.MQTT_DEVICE_PASSWORD,
@@ -69,12 +71,16 @@ const device = await mqtt.connectAsync(broker, {
   },
 });
 try {
-  await device.subscribeAsync(`${base}/frame`);
-  device.on("message", (_topic, buffer) => {
+  device.on("message", (topic, buffer) => {
     const parsed = JSON.parse(buffer.toString());
+    if (topic === `${base}/matrix`) {
+      program = parsed;
+      return;
+    }
     if (parsed.unauthorized) forged = true;
     else latest = parsed;
   });
+  await device.subscribeAsync([`${base}/frame`, `${base}/matrix`]);
   await device.publishAsync(`${base}/hello`, "{}");
   await until(
     async () => latest,
@@ -82,6 +88,18 @@ try {
   );
   assert.equal(latest!.line1.length, 16);
   assert.equal(latest!.matrix.length, 24);
+  await until(
+    async () => program,
+    (p) => !!p,
+  );
+  assert.deepEqual(program, matrixProgram((await api("state")).settings.matrix));
+  await device.unsubscribeAsync(`${base}/matrix`);
+  program = undefined;
+  await device.subscribeAsync(`${base}/matrix`);
+  await until(
+    async () => program,
+    (p) => !!p,
+  ); // retained program also survives reconnect/subscription races
   await device.publishAsync(
     `${base}/status`,
     JSON.stringify({

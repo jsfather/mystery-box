@@ -53,6 +53,7 @@ import { TimezoneSelect } from "./TimezoneSelect";
 import { HeaderConnection, AppearanceButton } from "./HeaderControls";
 import { Preferences, ThemeControl } from "./Preferences";
 import { useLiveSnapshot } from "./useLiveSnapshot";
+import { matrixCatalog, matrixFrame, matrixProgram } from "../../shared/matrix";
 type Page =
   | "overview"
   | "clock"
@@ -627,6 +628,7 @@ function App() {
                   settings={s.settings}
                   revision={s.settingsRevision}
                   hex={s.frame.matrix}
+                  appliedRevision={s.device.matrixRevision}
                   save={save}
                 />
               )}
@@ -982,25 +984,28 @@ function MatrixStudio({
   revision,
   hex,
   save,
+  appliedRevision,
 }: {
   settings: Settings;
   hex: string;
   save: SaveSettings;
   revision: number;
+  appliedRevision?: number;
 }) {
   const [draft, setDraft] = useState(settings.matrix),
     [index, setIndex] = useState(0),
     [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
+    [error, setError] = useState(""),
+    [group, setGroup] = useState("All"),
+    [previewTime, setPreviewTime] = useState(0);
+  useEffect(() => {
+    const start = performance.now();
+    const timer = setInterval(() => setPreviewTime(performance.now() - start), 33);
+    return () => clearInterval(timer);
+  }, []);
   const baseline = useRef(revision);
-  const modes = [
-    ["off", "Lights off"],
-    ["heart", "Heartbeat"],
-    ["wave", "Sine wave"],
-    ["rain", "Pixel rain"],
-    ["text", "Scrolling text"],
-    ["custom", "Draw your own"],
-  ] as const;
+  const groups = ["All", "Love", "Nature", "Space", "Patterns", "Play", "Create"];
+  const selected = matrixCatalog.find((m) => m.id === draft.mode)!;
   return (
     <div className="detail-grid">
       <form
@@ -1022,25 +1027,48 @@ function MatrixStudio({
         }}
       >
         <CardTitle eyebrow="MAKE A LITTLE LIGHT" title="Choose your expression" />
-        <div className="mode-grid">
-          {modes.map(([id, title]) => (
+        <p className="input-note">
+          24 expressions. Every animation plays locally on your box, even when Wi-Fi takes
+          a break.
+        </p>
+        <div
+          className="animation-categories"
+          role="group"
+          aria-label="Animation categories"
+        >
+          {groups.map((g) => (
             <button
               type="button"
-              key={id}
-              className={draft.mode === id ? "selected" : ""}
-              onClick={() => setDraft({ ...draft, mode: id })}
+              key={g}
+              aria-pressed={group === g}
+              onClick={() => setGroup(g)}
             >
-              {id === "off" ? (
-                <Moon size={19} />
-              ) : id === "text" ? (
-                <MessageSquare size={19} />
-              ) : (
-                <Grid3X3 size={19} />
-              )}
-              <span>{title}</span>
-              {draft.mode === id && <Check size={15} />}
+              {g}
             </button>
           ))}
+        </div>
+        <p className="input-note">Selected: {selected.name}</p>
+        <div className="mode-grid">
+          {matrixCatalog
+            .filter((m) => group === "All" || m.group === group)
+            .map(({ id, name: title }) => (
+              <button
+                type="button"
+                key={id}
+                className={draft.mode === id ? "selected" : ""}
+                onClick={() => setDraft({ ...draft, mode: id })}
+              >
+                {id === "off" ? (
+                  <Moon size={19} />
+                ) : id === "text" ? (
+                  <MessageSquare size={19} />
+                ) : (
+                  <Grid3X3 size={19} />
+                )}
+                <span>{title}</span>
+                {draft.mode === id && <Check size={15} />}
+              </button>
+            ))}
         </div>
         {draft.mode === "text" && (
           <>
@@ -1068,7 +1096,9 @@ function MatrixStudio({
           value={draft.speed}
           onChange={(e) => setDraft({ ...draft, speed: +e.target.value })}
         />
-        <p className="input-note">Live stream is capped at 5 frames per second.</p>
+        <p className="input-note">
+          Speed changes the playback on your Arduino. No streamed frames to wait for.
+        </p>
         {draft.mode === "custom" && (
           <>
             <label>Animation frames · {draft.frames.length} / 32</label>
@@ -1170,15 +1200,26 @@ function MatrixStudio({
         </button>
       </form>
       <section className="card">
-        <CardTitle eyebrow="CURRENT SERVER OUTPUT" title="Small pixels, big ideas" />
+        <CardTitle eyebrow="TRY BEFORE YOU SEND" title={selected.name} />
         <div className="studio-preview">
-          <Matrix hex={hex} />
+          <Matrix hex={matrixFrame(draft, previewTime)} />
         </div>
         <p className="quiet-note">
           <Info size={16} />
-          This is the live output of your saved animation. Draw frames on the left, then
-          send them to the matrix to play in a loop. Your Arduino only receives the
-          current 96 pixels.
+          This preview follows your choices before saving. Send to matrix to play it on
+          your box.
+        </p>
+        <CardTitle
+          eyebrow="ON YOUR BOX"
+          title={matrixCatalog.find((m) => m.id === settings.matrix.mode)!.name}
+        />
+        <div className="studio-preview">
+          <Matrix hex={hex} />
+        </div>
+        <p className="input-note">
+          {appliedRevision === matrixProgram(settings.matrix).revision
+            ? "Playback confirmed by your Arduino."
+            : "Preview of saved settings. Waiting for the next device confirmation."}
         </p>
       </section>
     </div>

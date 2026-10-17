@@ -5,6 +5,7 @@ import { render } from "./render.js";
 import { createApp } from "./app.js";
 import { z } from "zod";
 import type { Device, Snapshot } from "../shared/model.js";
+import { matrixProgram } from "../shared/matrix.js";
 let config;
 try {
   config = readConfig();
@@ -44,12 +45,14 @@ const telemetry = z.object({
   ip: z.string().max(45).optional(),
   firmware: z.string().max(32).optional(),
   seq: z.number().int().min(0).max(4294967295).optional(),
+  matrixRevision: z.number().int().min(0).max(4294967295).optional(),
 });
 client.on("connect", () => {
   broker = true;
   store.audit(null, "broker.connected");
   client.subscribe([`${base}/status`, `${base}/hello`], { qos: 1 });
   console.log("MQTT connected");
+  publishMatrix();
 });
 client.on("offline", () => {
   if (broker) store.audit(null, "broker.disconnected");
@@ -77,7 +80,10 @@ client.on("error", () => {
 client.on("message", (topic, payload, packet) => {
   if (payload.length > 1024) return;
   if (topic === `${base}/hello`) {
-    if (!packet.retain && client.connected) publish(true);
+    if (!packet.retain && client.connected) {
+      publishMatrix();
+      publish(true);
+    }
     return;
   }
   try {
@@ -96,12 +102,18 @@ client.on("message", (topic, payload, packet) => {
   }
 });
 let lastPublishedAt = 0;
+function publishMatrix() {
+  if (client.connected)
+    client.publish(`${base}/matrix`, JSON.stringify(matrixProgram(settings.matrix)), {
+      qos: 1,
+      retain: true,
+    });
+}
 function publish(force = false) {
   frame = render(settings, messages, Date.now(), (seq = (seq + 1) >>> 0));
-  // Clock/counter ticks and heart pulses run on the device. Avoid filling its
-  // serial Wi-Fi bridge with redundant frames; keep scrolling/other effects at 5fps.
-  const dynamic =
-    !["off", "heart"].includes(settings.matrix.mode) || (!frame.clock && !frame.love);
+  // Clocks and all matrix sequences run on the device. Avoid redundant
+  // frames on its serial Wi-Fi bridge; keep LCD message scrolling at 5fps.
+  const dynamic = !frame.clock && !frame.love;
   if (!force && !dynamic && Date.now() - lastPublishedAt < 1000) return;
   lastPublishedAt = Date.now();
   if (client.connected)
@@ -138,8 +150,10 @@ const snapshot = (): Snapshot => ({
 const app = createApp(config, store, {
   snapshot,
   changed: () => {
+    const previousMatrix = JSON.stringify(settings.matrix);
     settings = store.settings();
     messages = store.messages();
+    if (previousMatrix !== JSON.stringify(settings.matrix)) publishMatrix();
     publish(true);
     for (const fn of listeners) fn();
   },

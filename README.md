@@ -21,7 +21,7 @@ Start with [your shared story, accounts and iPhone installation](docs/our-story.
 - Set story windows (for example, 30 seconds every 10 minutes), switch display modes from the dashboard, and choose days/time, total seconds, days, weeks, hours or a rotating counter.
 - Follow the device theme automatically or choose light/dark appearance. Timezones use dropdowns throughout.
 - Restore factory display settings with password confirmation, optionally erasing personal message and journal history while keeping accounts.
-- Play heart, wave, and rain animations; scroll Latin text; draw and sequence up to 32 custom matrix frames.
+- Choose from 24 matrix expressions, including 18 new space, nature, love and playful presets; preview before saving, scroll Latin text, and draw up to 32 custom frames. Every effect plays locally on the matrix hardware timer, including through Wi-Fi outages.
 - See the server’s intended output live, plus device heartbeat, signal strength, IP, firmware, and last frame reported.
 - Keep settings, message history, accounts, sessions and activity across server restarts.
 

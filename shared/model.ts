@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { matrixModes } from "./matrix.js";
 export const printable = z
   .string()
   .regex(
@@ -80,7 +81,7 @@ export const settingsSchema = z
     backlight: z.boolean(),
     matrix: z
       .object({
-        mode: z.enum(["off", "heart", "wave", "rain", "text", "custom"]),
+        mode: z.enum(matrixModes),
         text: printable.max(80),
         speed: z.number().int().min(1).max(10),
         frames: z
@@ -176,6 +177,7 @@ export interface Frame {
   loveOffset: number;
 }
 export interface Device {
+  matrixRevision?: number;
   online: boolean;
   lastSeen: number | null;
   rssi: number | null;

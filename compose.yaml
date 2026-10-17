@@ -30,6 +30,8 @@ services:
     security_opt: ["no-new-privileges:true"]
   broker:
     image: eclipse-mosquitto:2.0.22
+    labels:
+      io.mystery-box.matrix-protocol: "1"
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/opt/start.sh"]
     environment:
