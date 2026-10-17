@@ -5,7 +5,7 @@ import { render } from "./render.js";
 import { createApp } from "./app.js";
 import { z } from "zod";
 import type { Device, Snapshot } from "../shared/model.js";
-import { matrixProgram } from "../shared/matrix.js";
+import { matrixProgram, matrixNeedsStream } from "../shared/matrix.js";
 let config;
 try {
   config = readConfig();
@@ -113,7 +113,9 @@ function publish(force = false) {
   frame = render(settings, messages, Date.now(), (seq = (seq + 1) >>> 0));
   // Clocks and all matrix sequences run on the device. Avoid redundant
   // frames on its serial Wi-Fi bridge; keep LCD message scrolling at 5fps.
-  const dynamic = !frame.clock && !frame.love;
+  const dynamic =
+    (!frame.clock && !frame.love) ||
+    matrixNeedsStream(settings.matrix, device.matrixRevision);
   if (!force && !dynamic && Date.now() - lastPublishedAt < 1000) return;
   lastPublishedAt = Date.now();
   if (client.connected)

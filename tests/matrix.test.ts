@@ -12,6 +12,7 @@ import {
   matrixFrameCount,
   matrixInterval,
   matrixProgram,
+  matrixNeedsStream,
   encodePixels,
   presetPixels,
 } from "../shared/matrix.js";
@@ -48,6 +49,9 @@ test("program payload fits the broker and device limits; irrelevant fields do no
     speed: 10,
   };
   const p = matrixProgram(custom);
+  assert.equal(matrixNeedsStream(custom), true);
+  assert.equal(matrixNeedsStream(custom, p.revision), false);
+  assert.equal(matrixNeedsStream({ ...custom, speed: 9 }, p.revision), true);
   assert.ok(Buffer.byteLength(JSON.stringify(p)) <= 1024);
   assert.equal(matrixProgram({ ...custom, text: "ignored" }).revision, p.revision);
   assert.notEqual(matrixProgram({ ...custom, speed: 9 }).revision, p.revision);

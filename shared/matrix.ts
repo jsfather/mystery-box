@@ -367,3 +367,11 @@ export function matrixProgram(s: MatrixSettings) {
     revision = Math.imul(revision ^ c.charCodeAt(0), 16777619) >>> 0;
   return { ...config, revision };
 }
+
+// Older devices still need frames until they acknowledge the complete program.
+export function matrixNeedsStream(s: MatrixSettings, acknowledgedRevision?: number) {
+  return (
+    !["off", "heart"].includes(s.mode) &&
+    acknowledgedRevision !== matrixProgram(s).revision
+  );
+}
