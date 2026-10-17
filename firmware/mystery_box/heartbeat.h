@@ -25,4 +25,23 @@ inline void draw(uint8_t pixels[8][12], uint8_t phase) {
       pixels[y][x] = x >= left && x < left + width && y >= top && y < top + height
         ? shape[y - top][x - left] == '1' : 0;
 }
+inline void sequence(uint32_t frames[6][4], uint8_t speed) {
+  const uint8_t stages[] = {1, 2, 1, 0, 1, 0};
+  const uint16_t durations[] = {80, 100, 70, 80, 100};
+  const uint32_t period = 60000UL / (50 + speed * 6);
+  uint32_t used = 0;
+  for (int f = 0; f < 6; ++f) {
+    uint8_t pixels[8][12];
+    draw(pixels, stages[f]);
+    for (int word = 0; word < 3; ++word) {
+      frames[f][word] = 0;
+      for (int bit = 0; bit < 32; ++bit) {
+        const int i = word * 32 + bit;
+        frames[f][word] = (frames[f][word] << 1) | pixels[i / 12][i % 12];
+      }
+    }
+    frames[f][3] = f == 5 ? period - used : period * durations[f] / 1000;
+    used += frames[f][3];
+  }
+}
 }

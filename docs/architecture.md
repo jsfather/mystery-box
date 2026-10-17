@@ -21,7 +21,7 @@ flowchart LR
 
 The UNO R4 has a Renesas RA4M1 (48 MHz, 32 KB SRAM), a Wi-Fi coprocessor, an RTC and a built-in matrix. It can handle cooperative tasks; lack of application threads does not require every pixel to be streamed. A typical embedded alternative would send settings once and render animations locally. Here the requested server-centric approach makes firmware simpler and keeps calendar/font/message logic editable without flashing it.
 
-Clock/counter ticks and the heartbeat animation run locally on a monotonic timeline. Quiet clock/heart states are sent once per second; messages and other effects remain capped at 5 frames/s. Settings changes and device hello force an immediate update. The heartbeat uses three intact, centered heart sizes with a strong pulse, a softer pulse and a longer rest (56–110 BPM).
+Clock/counter ticks and the heartbeat animation run locally on a monotonic timeline. Quiet clock/heart states are sent once per second; messages and other effects remain capped at 5 frames/s. Settings changes and device hello force an immediate update. The heartbeat uses three intact, centered heart sizes with a strong pulse, a softer pulse and a longer rest (56–110 BPM). The matrix hardware timer advances its persistent six-frame sequence independently of blocking network calls.
 
 ### Why MQTT
 

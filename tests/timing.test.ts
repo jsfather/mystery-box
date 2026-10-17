@@ -68,6 +68,19 @@ int main() {
   StoryCalendar::format(date, sizeof(date), 1696119480LL, 1792196280LL);
   printf("%s\\n", date);
   for (int speed = 1; speed <= 10; ++speed) {
+    uint32_t frames[6][4];
+    Heartbeat::sequence(frames, speed);
+    uint32_t total = 0;
+    const uint8_t stages[] = {1,2,1,0,1,0};
+    for (int f = 0; f < 6; ++f) {
+      total += frames[f][3];
+      assert(frames[f][3] > 0);
+      uint8_t pixels[8][12];
+      Heartbeat::draw(pixels, stages[f]);
+      for (int i = 0; i < 96; ++i)
+        assert(((frames[f][i / 32] >> (31 - i % 32)) & 1) == pixels[i / 12][i % 12]);
+    }
+    assert(total == 60000UL / (50 + speed * 6));
     for (int t = 0; t < 1200; t += 25) {
       uint8_t p[8][12];
       Heartbeat::draw(p, Heartbeat::stage(t, speed));

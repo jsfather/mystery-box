@@ -34,7 +34,8 @@ uint64_t newestFrameMs = 0;
 SteadyClock displayClock;
 bool localClock = false, localLove = false, clockTop = false, localHeart = false;
 bool wifiConnected = false;
-uint8_t heartSpeed = 5, heartPhase = 255;
+uint8_t heartSpeed = 5, playingHeartSpeed = 0;
+uint32_t heartFrames[6][4];
 uint32_t lastDrawSecond = 0, lastTickAt = 0, tickMin = UINT32_MAX, tickMax = 0;
 int32_t utcOffset = 0, cachedDateKey = 0;
 bool synced = false, lcdReady = false, lightOn = true;
@@ -146,7 +147,23 @@ void received(char* topic, byte* payload, unsigned int length) {
   localHeart = doc["heart"] | false;
   heartSpeed = doc["heartSpeed"] | 5;
   if (heartSpeed < 1 || heartSpeed > 10) heartSpeed = 5;
-  if (localHeart != wasHeart) heartPhase = 255;
+  if (localHeart && (!wasHeart || heartSpeed != playingHeartSpeed)) {
+    // The LED library advances sequences in its hardware timer ISR. Stop it
+    // while replacing the persistent frame buffer, then play independently of Wi-Fi.
+    noInterrupts();
+    matrix.autoscroll(0);
+    interrupts();
+    Heartbeat::sequence(heartFrames, heartSpeed);
+    noInterrupts();
+    matrix.loadSequence(heartFrames);
+    matrix.play(true);
+    interrupts();
+    playingHeartSpeed = heartSpeed;
+  } else if (!localHeart && wasHeart) {
+    noInterrupts();
+    matrix.autoscroll(0);
+    interrupts();
+  }
   if (localClock) {
     memcpy(cachedDate, b, 17);
     cachedDateKey = doc["dateKey"].as<int32_t>();
@@ -270,14 +287,6 @@ void drawLocal(uint32_t now) {
   const bool offline = now - lastFrameAt > 3000UL;
   if (localClock || localLove || clockTop || offline)
     drawClock(timeMs / 1000, offline, offline ? loveEnabled : localLove);
-  if (localHeart) {
-    const uint8_t phase = Heartbeat::stage(timeMs, heartSpeed);
-    if (phase != heartPhase) {
-      Heartbeat::draw(pixels, phase);
-      matrix.renderBitmap(pixels, 8, 12);
-      heartPhase = phase;
-    }
-  }
 }
 
 void scheduleRetry() {
