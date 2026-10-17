@@ -43,9 +43,7 @@ export function MessageComposer({
         />
         <span>{text.length}/160</span>
       </div>
-      <p className="input-note">
-        Latin letters & numbers · Long messages scroll automatically.
-      </p>
+      <p className="input-note">Latin letters & numbers · Long notes scroll.</p>
       {error && (
         <p role="alert" className="error">
           {error}

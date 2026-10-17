@@ -826,10 +826,10 @@ footer > span {
 .login-form > input {
   width: 100%;
   padding: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--field-border);
   border-radius: 7px;
-  color: #4f6148;
-  background: #fdfefc;
+  color: var(--ink);
+  background: var(--surface);
 }
 .segmented {
   display: flex;

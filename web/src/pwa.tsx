@@ -47,7 +47,7 @@ export function InstallApp() {
   return (
     <>
       {update && (
-        <div className="install-banner">
+        <div className="install-banner app-update-banner">
           <RefreshCcw size={20} />
           <div>
             <strong>A little refresh is ready.</strong>

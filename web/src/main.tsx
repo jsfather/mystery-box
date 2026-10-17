@@ -19,7 +19,6 @@ import {
   X,
   Plus,
   Trash2,
-  LogOut,
   LoaderCircle,
   LockKeyhole,
   ChevronRight,
@@ -51,7 +50,7 @@ import "./style.css";
 import "./love.css";
 import "./theme.css";
 import { TimezoneSelect } from "./TimezoneSelect";
-import { HeaderConnection, MobileThemeButton } from "./HeaderControls";
+import { HeaderConnection, AppearanceButton } from "./HeaderControls";
 import { Preferences, ThemeControl } from "./Preferences";
 type Page =
   | "overview"
@@ -272,22 +271,13 @@ function App() {
   }
   const s = snapshot;
   return (
-    <div className="shell">
+    <div className={`shell${page === "messages" ? " conversation-view" : ""}`}>
       <aside className="sidebar">
         <div className="sidebar-header">
           <Brand />
           <div className="mobile-header-actions">
-            <MobileThemeButton />
-            <HeaderConnection live={live} />
-            <button
-              type="button"
-              className="mobile-signout"
-              aria-label="Sign out"
-              title="Sign out"
-              onClick={signOut}
-            >
-              <LogOut size={18} />
-            </button>
+            <AppearanceButton />
+            <HeaderConnection live={live} snapshot={s} />
           </div>
         </div>
         <div className="workspace">
@@ -338,19 +328,7 @@ function App() {
             </p>
             <Cable size={31} />
           </div>
-          <button
-            className="logout"
-            onClick={() =>
-              api("logout", "POST")
-                .then(() => {
-                  setAuth(false);
-                  setSnapshot(null);
-                })
-                .catch((e) => notice(e.message))
-            }
-          >
-            <LogOut size={16} /> Sign out
-          </button>
+
           <small className="version">MYSTERY BOX / V1.1</small>
         </div>
       </aside>
@@ -361,28 +339,14 @@ function App() {
             <strong>{pageInfo[page][0]}</strong>
           </div>
           <div className="top-status">
-            <ThemeControl />
-            <HeaderConnection live={live} />
+            <AppearanceButton />
+            <HeaderConnection live={live} snapshot={s} />
             <span className="avatar" title={me?.name}>
               {me?.name.slice(0, 1) ?? "♥"}
             </span>
-            <button
-              className="top-logout"
-              aria-label="Sign out"
-              onClick={() =>
-                api("logout", "POST")
-                  .then(() => {
-                    setAuth(false);
-                    setSnapshot(null);
-                  })
-                  .catch((e) => notice(e.message))
-              }
-            >
-              <LogOut size={15} />
-            </button>
           </div>
         </header>
-        <main>
+        <main className={page === "messages" ? "messages-page" : undefined}>
           <div className="page-heading">
             <div>
               <div className="eyebrow">SOMEWHERE ONLY WE KNOW</div>
@@ -649,7 +613,9 @@ function App() {
                 <MessageHistory snapshot={s} notice={notice} me={me!} />
               )}
               {page === "love" && <LovePage snapshot={s} save={save} />}
-              {page === "people" && me && <PeoplePage me={me} onMeChange={setMe} />}
+              {page === "people" && me && (
+                <PeoplePage me={me} onMeChange={setMe} onSignOut={signOut} />
+              )}
               {page === "activity" && <ActivityPage timezone={s.settings.timezone} />}
               {page === "preferences" && (
                 <Preferences snapshot={s} save={save} notice={notice} />
@@ -790,7 +756,7 @@ function Stat({
       </div>
       <strong className={status ? "green" : ""}>
         {status && <span className="status-dot" />}
-        {value}
+        <span>{value}</span>
       </strong>
       <small>{sub}</small>
     </div>

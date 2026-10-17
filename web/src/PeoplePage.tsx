@@ -1,11 +1,21 @@
 import { useEffect, useState } from "react";
-import { Heart, Plus, Check, LoaderCircle, UserRound, ShieldCheck } from "lucide-react";
+import {
+  Heart,
+  Plus,
+  Check,
+  LoaderCircle,
+  UserRound,
+  ShieldCheck,
+  LogOut,
+} from "lucide-react";
 import type { User } from "../../shared/model";
 import { api } from "./api";
 export function PeoplePage({
   me,
   onMeChange,
+  onSignOut,
 }: {
+  onSignOut: () => void;
   me: User;
   onMeChange: (user: User) => void;
 }) {
@@ -38,6 +48,16 @@ export function PeoplePage({
   }
   return (
     <>
+      <section className="card account-session">
+        <div>
+          <strong>Signed in as {me.name}</strong>
+          <p>@{me.username} · This device</p>
+        </div>
+        <button type="button" className="secondary" onClick={onSignOut}>
+          <LogOut size={16} />
+          Sign out
+        </button>
+      </section>
       <div className="together-note">
         <Heart size={20} />
         <div>
