@@ -1,0 +1,202 @@
+{
+  "01_body_forest": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 111676.9,
+    "print_bounds_mm": [
+      190.0,
+      110.0,
+      34.0
+    ],
+    "triangles": 167720
+  },
+  "02_front_bone": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 59149.67,
+    "print_bounds_mm": [
+      190.0,
+      110.0,
+      15.5
+    ],
+    "triangles": 17368
+  },
+  "03_glass_retainer": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 7680.39,
+    "print_bounds_mm": [
+      182.0,
+      78.0,
+      2.0
+    ],
+    "triangles": 3856
+  },
+  "04_accent_copper": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 182.8,
+    "print_bounds_mm": [
+      114.6,
+      2.0,
+      0.8
+    ],
+    "triangles": 652
+  },
+  "05_desk_stand": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 67544.63,
+    "print_bounds_mm": [
+      150.0,
+      70.0,
+      34.0
+    ],
+    "triangles": 5888
+  },
+  "06_UNO_fit_coupon": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 11717.17,
+    "print_bounds_mm": [
+      77.0,
+      59.0,
+      24.5
+    ],
+    "triangles": 5116
+  },
+  "07_LCD_button_coupon": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 9425.81,
+    "print_bounds_mm": [
+      88.0,
+      42.0,
+      8.0
+    ],
+    "triangles": 18140
+  },
+  "08_button_cap_copper": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 851.17,
+    "print_bounds_mm": [
+      15.0,
+      15.0,
+      8.8
+    ],
+    "triangles": 1892
+  },
+  "09_button_capture_washer": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 245.42,
+    "print_bounds_mm": [
+      14.6,
+      14.6,
+      1.5
+    ],
+    "triangles": 1264
+  },
+  "10_button_carrier": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 987.62,
+    "print_bounds_mm": [
+      30.0,
+      14.0,
+      5.0
+    ],
+    "triangles": 1996
+  },
+  "11_button_blank_spacer": {
+    "watertight": true,
+    "solids": 1,
+    "volume_mm3": 419.89,
+    "print_bounds_mm": [
+      9.8,
+      9.8,
+      7.8
+    ],
+    "triangles": 1298
+  },
+  "typography": {
+    "integral_engraving": true,
+    "rear_sentence": "Time will tell how much I love you.",
+    "features": [
+      {
+        "text": "Time will tell",
+        "font_size_mm": 10,
+        "depth_mm": 0.6,
+        "surface": "rear"
+      },
+      {
+        "text": "how much I love you.",
+        "font_size_mm": 10,
+        "depth_mm": 0.6,
+        "surface": "rear"
+      },
+      {
+        "text": "MYSTERY BOX",
+        "font_size_mm": 3.5,
+        "depth_mm": 0.6,
+        "surface": "rear"
+      },
+      {
+        "text": "USB-C",
+        "font_size_mm": 3.2,
+        "depth_mm": 0.6,
+        "surface": "left ports"
+      },
+      {
+        "text": "5V / DATA",
+        "font_size_mm": 2.8,
+        "depth_mm": 0.6,
+        "surface": "left ports"
+      },
+      {
+        "text": "DC IN",
+        "font_size_mm": 3.2,
+        "depth_mm": 0.6,
+        "surface": "left ports"
+      },
+      {
+        "text": "6-24V",
+        "font_size_mm": 2.8,
+        "depth_mm": 0.6,
+        "surface": "left ports"
+      },
+      {
+        "text": "MODE",
+        "font_size_mm": 3.2,
+        "depth_mm": 0.6,
+        "surface": "front button"
+      },
+      {
+        "text": "USB-C",
+        "font_size_mm": 3.2,
+        "depth_mm": 0.6,
+        "surface": "test coupon"
+      }
+    ],
+    "paint_fill_optional": true
+  },
+  "assembly_checks": {
+    "body_front_overlap_mm3": 0,
+    "front_retainer_overlap_mm3": 0,
+    "stand_body_overlap_mm3": 0,
+    "front_acrylic_overlap_mm3": 0,
+    "physical_fit_verified": false,
+    "button_checks_mm3": {
+      "cap_front": 0.0,
+      "washer_front": 0.0,
+      "carrier_front": 0.0,
+      "carrier_blank": 0.0,
+      "blank_washer": 0.0,
+      "button_body": 0.0,
+      "pressed_cap_front": 0.0
+    },
+    "button_nominal_press_travel_mm": 0.6,
+    "switch_actuator_gap_mm": 0.2
+  }
+}

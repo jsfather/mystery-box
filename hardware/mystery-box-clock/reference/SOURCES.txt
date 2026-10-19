@@ -1,0 +1,6 @@
+Official Arduino reference images, retrieved 2026-10-18.
+Copyright remains with Arduino and original authors.
+https://raw.githubusercontent.com/arduino/docs-content/main/content/hardware/uno/boards/uno-r4-wifi/datasheet/assets/mechanicalDrawingWiFi.png
+https://raw.githubusercontent.com/arduino/docs-content/main/content/hardware/uno/boards/uno-r4-wifi/datasheet/assets/topViewWiFi.png
+Mechanical hole locations taken from dimensioned mechanical drawing.
+USB-C and DC connector locations estimated from top view; confirm using fit coupon.

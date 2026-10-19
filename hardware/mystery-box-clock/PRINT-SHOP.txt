@@ -1,0 +1,36 @@
+Mystery Box — EASY SERVICE / OPTIONAL TACTILE BUTTON — mm, 100% scale
+
+Print 06 and 07 FIRST; owner verifies hardware fit and heat-set insertion on coupon.
+Final assembly: ONE EACH 01–05 and 08–11. 06/07 are test coupons only.
+11 is installed ONLY with no tactile switch. Remove 11 when fitting a switch.
+01/03/05/09/10: matte forest PETG. 02: bone PETG. 04/08/11: copper PLA/PETG.
+0.4 nozzle, 0.20 layers, 4 walls, 5 top/bottom, 20–25% gyroid.
+All STLs are oriented, Z min=0. Support local body port roofs and stand cradle as needed.
+Cap 08 prints face-down. Clean sliding stem; do not glue cap to front.
+
+HEAT-SET INSERTS: fit before electronics. NEVER use old self-tapping screw BOM.
+4 x M3 brass inserts: OD4.6 x L4; model pilot4.2; body top pockets.
+15 x M2 brass inserts: OD3.2 x L3; model pilot2.9.
+M2 locations: UNO4, LCD4, glass frame4, button carrier2, button stem1.
+Install flush using a temperature-controlled insertion tool. Confirm fit on coupon.
+Machine screws: M3x8 (4), M2x4 (8), M2x5 (4), M2x6 (3), M3x12 (2).
+M2x6 cap screw head height <=1.5 mm. M3x8 head diameter <=6, height <=2.
+2 x standard M3 hex nuts in body pockets for stand. Stand has recessed screw access.
+
+Button: printed cap + screwed capture washer + removable 2-screw carrier.
+No switch: include blank spacer 11. Switch: REMOVE spacer 11; bare 6x6x4.3 tactile.
+Direct-wire switch; extra PCB thickness is NOT included. Verify release and press travel.
+Cap nominal stroke .6 mm; nominal actuator gap .2 mm with <=1.5 mm screw head.
+These are nominal prototype dimensions, physical verification is required.
+
+LASER: one clear cast acrylic 178 x 66 x 2.0 mm, R8 corners.
+Use laser SVG at 1:1, compensate kerf to FINISHED dimensions.
+README.fa.md gives assembly/service details; STEP is editable reference.
+
+INTEGRAL ENGRAVING (NOT A STICKER): 0.6 mm deep.
+Rear: “Time will tell” / “how much I love you.” in classic bold italic.
+Left side: USB-C, 5V / DATA, DC IN, 6-24V. Front button: MODE.
+Legends 2.8–3.2 mm font size. Coupon 07 includes a USB-C print-readability sample.
+Prefer smooth print bed; use calibrated elephant-foot compensation.
+Optional acrylic paint infill: ivory rear/side text, copper rules, forest MODE.
+No color printer needed. Check readability on coupon before full body.

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1140" height="800" viewBox="0 0 228 160">
+<rect width="228" height="160" fill="#f4f0e7"/>
+<g font-family="Arial" fill="#234e42"><text x="19" y="12" font-size="6">Mystery Box / Mechanical layout</text><text x="19" y="19" font-size="3">All dimensions in mm · Front elevation · Prototype fit required</text></g>
+<g transform="translate(19 27)" stroke="#234e42" stroke-width=".3">
+<rect width="190" height="110" rx="10" fill="#e5ddca"/>
+<rect x="9" y="28" width="172" height="60" rx="5" fill="#c9d5ca"/>
+<rect x="6" y="25" width="178" height="66" rx="8" fill="none" stroke-dasharray="1 1"/>
+<rect x="3.5" y="31.66" width="68.58" height="53.34" fill="#31735c" fill-opacity=".6"/>
+<g fill="#eee9df"><circle cx="17.47" cy="82.46" r="1.6"/><circle cx="69.54" cy="77.38" r="1.6"/><circle cx="69.54" cy="49.44" r="1.6"/><circle cx="18.74" cy="34.2" r="1.6"/></g>
+<rect x="100" y="40" width="80" height="36" fill="#31735c"/><rect x="104" y="45" width="72" height="26" fill="#263c31"/><rect x="108" y="49" width="64" height="18" fill="#a1b58a"/>
+<g fill="#ddd5c4"><circle cx="102.5" cy="42.5" r="1.5"/><circle cx="177.5" cy="42.5" r="1.5"/><circle cx="102.5" cy="73.5" r="1.5"/><circle cx="177.5" cy="73.5" r="1.5"/></g>
+<circle cx="161" cy="14" r="7.5" fill="#b9744d"/><text x="161" y="26" text-anchor="middle" font-family="Arial" font-size="3.2" stroke="none" fill="#234e42">MODE</text>
+<g fill="#64766b"><circle cx="7" cy="7" r="3"/><circle cx="183" cy="7" r="3"/><circle cx="7" cy="103" r="3"/><circle cx="183" cy="103" r="3"/></g>
+<rect x="23" y="98.6" width="115" height="2.4" rx="1.1" fill="#b9744d"/>
+<g stroke="none" fill="#183d30" font-family="Arial" font-size="3"><text x="111" y="59">1602 • 80 × 36</text><text x="30" y="55">UNO R4 WiFi</text><text x="28" y="60">68.58 × 53.34</text><text x="112" y="17">Printed cap / Ø10.6 guide</text><text x="80" y="95">clear aperture 172 × 60</text></g>
+<g stroke="#234e42" fill="none"><path d="M0 115v5m190-5v5M0 118h190"/><path d="M-5 0h-5m5 110h-5M-8 0v110"/></g>
+<g stroke="none" font-family="Arial" font-size="4" fill="#234e42"><text x="90" y="125">190</text><text x="-15" y="57">110</text></g>
+</g></svg>
