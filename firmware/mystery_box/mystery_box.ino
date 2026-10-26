@@ -68,7 +68,8 @@ uint32_t gameSeq = 0, lastGameCommand = 0, lastGamePublish = 0;
 bool gameDirty = false, gameDrawing = false;
 uint8_t gamePixels[8][12];
 uint32_t maxNetworkMs = 0, reportedMatrixRevision = 0;
-uint32_t lastScrollStep = 0, lastScrollAt = 0, scrollMin = UINT32_MAX, scrollMax = 0;
+uint16_t networkBudgetMs = 100;
+uint32_t lastScrollAt = 0, scrollMin = UINT32_MAX, scrollMax = 0;
 
 void restoreMatrix() {
   noInterrupts(); matrix.autoscroll(0); interrupts();
@@ -598,7 +599,7 @@ void loop() {
   if (!mqttReady) return;
   // WiFiS3 connected()/available() are serial modem transactions, not cheap reads.
   // Leave a quiet window before the next LCD step; do not hammer the coprocessor.
-  if (scroll.untilNext(now) < 35UL) return;
+  if (scroll.untilNext(now) < networkBudgetMs) return;
   if (now - lastMqttPoll < 25UL) return;
   lastMqttPoll = now;
   if (!brokerConnected) {
@@ -633,6 +634,9 @@ void loop() {
   if (!mqtt.loop()) { brokerConnected = false; fault(5, true); }
   const uint32_t networkMs = millis() - networkStarted;
   if (networkMs > maxNetworkMs) maxNetworkMs = networkMs;
+  // Keep the measured budget across telemetry windows; cap it so polling still
+  // has a slot in every 200 ms character period even after an outage.
+  if (networkMs + 10 > networkBudgetMs) networkBudgetMs = networkMs >= 140 ? 150 : networkMs + 10;
   // Service local tasks between network operations, rather than stacking delays.
   const uint32_t afterNetwork = millis();
   serviceGame(afterNetwork);
