@@ -65,10 +65,11 @@ export const settingsSchema = z
       .object({
         mode: z.enum(["full", "clock"]),
         blink: z.boolean().default(false),
+        scrollStepMs: z.number().int().min(200).max(1000).multipleOf(50).default(400),
         defaultDuration: z.number().int().min(5).max(300),
       })
       .strict()
-      .default({ mode: "full", defaultDuration: 120, blink: false }),
+      .default({ mode: "full", defaultDuration: 120, blink: false, scrollStepMs: 400 }),
     love: loveSchema.default({
       format: "daysClock",
       startAt: null,
@@ -112,7 +113,7 @@ export type Settings = z.infer<typeof settingsSchema>;
 export const defaults: Settings = {
   displayMode: "clock",
   schedule: { everyMinutes: 10, durationSeconds: 30 },
-  messaging: { mode: "full", defaultDuration: 120, blink: false },
+  messaging: { mode: "full", defaultDuration: 120, blink: false, scrollStepMs: 400 },
   love: {
     format: "daysClock",
     startAt: null,
@@ -190,6 +191,7 @@ export interface Frame {
 }
 export interface Device {
   lcdScroll?: boolean;
+  scrollSpeed?: boolean;
   snake?: boolean;
   errors?: number;
   occurred?: number;

@@ -1,8 +1,18 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { Settings2, TriangleAlert, Sun, Moon, Monitor } from "lucide-react";
+import {
+  Settings2,
+  TriangleAlert,
+  Sun,
+  Moon,
+  Monitor,
+  BellRing,
+  Gauge,
+} from "lucide-react";
 import type { Snapshot } from "../../shared/model";
 import { api, type SaveSettings } from "./api";
 import "./message-actions.css";
+import "./preferences.css";
+import { ScrollSpeedPreview } from "./ScrollSpeedPreview";
 declare global {
   interface Window {
     mbSetTheme: (value: string) => void;
@@ -95,7 +105,7 @@ export function Preferences({
         <div className="card-title">
           <div>
             <span className="eyebrow">OUR EVERYDAY DETAILS</span>
-            <h2>Messages & appearance</h2>
+            <h2>Message settings</h2>
           </div>
           <Settings2 size={20} />
         </div>
@@ -114,25 +124,84 @@ export function Preferences({
           Long messages scroll. The clock stays live in the top row when you choose the
           second layout.
         </p>
-        <label className="message-alert-setting" htmlFor="message-blink">
+        <section className="reading-speed-setting" aria-labelledby="reading-speed-title">
+          <div className="preference-section-heading">
+            <div>
+              <Gauge size={18} />
+              <label id="reading-speed-title" htmlFor="reading-speed">
+                Scrolling speed
+              </label>
+            </div>
+            <output htmlFor="reading-speed">
+              {messaging.scrollStepMs >= 750
+                ? "Unhurried"
+                : messaging.scrollStepMs >= 500
+                  ? "Gentle"
+                  : messaging.scrollStepMs >= 350
+                    ? "Comfortable"
+                    : "Brisk"}
+            </output>
+          </div>
+          <p className="preference-hint">Choose a pace that’s easy to read.</p>
           <input
-            id="message-blink"
-            type="checkbox"
-            checked={messaging.blink}
-            onChange={(e) => setMessaging({ ...messaging, blink: e.target.checked })}
+            id="reading-speed"
+            className="reading-speed-input"
+            type="range"
+            min={200}
+            max={1000}
+            step={50}
+            value={1200 - messaging.scrollStepMs}
+            aria-valuetext={`${(1000 / messaging.scrollStepMs).toFixed(1)} characters per second`}
+            onChange={(event) =>
+              setMessaging({
+                ...messaging,
+                scrollStepMs: 1200 - Number(event.target.value),
+              })
+            }
           />
-          <span>
-            <strong>Flash both displays for new messages</strong>
-            <small>
-              Six bright flashes over three seconds when each note reaches the box. Snake
-              pauses during the alert.
-            </small>
-          </span>
-        </label>
-        <p className="input-note">
-          Off by default. Requires firmware 1.6.0 and the matching server update.
-        </p>
-        <label htmlFor="default-duration">Default time on the box</label>
+          <div className="reading-speed-labels">
+            <span>Slower</span>
+            <span>Faster</span>
+          </div>
+          <ScrollSpeedPreview stepMs={messaging.scrollStepMs} />
+          <p className="preference-hint">
+            Short notes stay still. Longer notes scroll at this speed.
+          </p>
+        </section>
+        <section className="message-alert-card" aria-labelledby="message-alert-title">
+          <div className="message-alert-row">
+            <span className="message-alert-icon">
+              <BellRing size={20} />
+            </span>
+            <div className="message-alert-copy">
+              <h3 id="message-alert-title">New-message alert</h3>
+              <p>Flash the LCD and LED matrix.</p>
+            </div>
+            <button
+              className="pref-switch"
+              type="button"
+              role="switch"
+              aria-labelledby="message-alert-title"
+              aria-describedby="message-alert-description"
+              aria-checked={messaging.blink}
+              onClick={() => setMessaging({ ...messaging, blink: !messaging.blink })}
+            >
+              <span className="pref-switch-track">
+                <span />
+              </span>
+            </button>
+          </div>
+          <div className="message-alert-detail" id="message-alert-description">
+            <span className={`alert-state ${messaging.blink ? "enabled" : ""}`}>
+              {messaging.blink ? "On" : "Off"}
+            </span>
+            <p>
+              Six bright flashes over three seconds when a note arrives. Snake pauses
+              until you resume.
+            </p>
+          </div>
+        </section>
+        <label htmlFor="default-duration">Time on screen</label>
         <select
           id="default-duration"
           value={messaging.defaultDuration}

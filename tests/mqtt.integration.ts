@@ -182,7 +182,7 @@ try {
   await api("settings", "PUT", {
     ...defaults,
     timezone: "UTC",
-    messaging: { mode: "clock", defaultDuration: 120, blink: false },
+    messaging: { mode: "clock", defaultDuration: 120, blink: false, scrollStepMs: 400 },
   });
   const chat = await api("messages", "POST", {
     text: "Our conversation reaches the little box",
@@ -236,6 +236,47 @@ try {
   await until(
     () => api("state"),
     (s) => s.device.snake === true,
+  );
+  await api("settings", "PUT", {
+    ...defaults,
+    messaging: { ...defaults.messaging, mode: "clock", scrollStepMs: 800 },
+  });
+  const reading = await api("messages", "POST", {
+    text: "A longer note deserves a comfortable reading pace",
+    duration: 30,
+  });
+  await until(
+    async () => latest,
+    (f) => !!f && f.messageId === reading.id && f.scroll?.stepMs === 200,
+  );
+  // Capability negotiation applies the selected pace immediately after a firmware update.
+  await device.publishAsync(
+    `${base}/status`,
+    JSON.stringify({
+      online: true,
+      firmware: "1.7.0",
+      snake: true,
+      lcdScroll: true,
+      scrollSpeed: true,
+      errors: 0,
+      matrixRevision: program!.revision,
+    }),
+  );
+  await until(
+    async () => latest,
+    (f) => !!f && f.messageId === reading.id && f.scroll?.stepMs === 800,
+  );
+  await api("settings", "PUT", {
+    ...defaults,
+    messaging: { ...defaults.messaging, mode: "clock", scrollStepMs: 600 },
+  });
+  await until(
+    async () => latest,
+    (f) => !!f && f.messageId === reading.id && f.scroll?.stepMs === 600,
+  );
+  await api("messages/delete", "POST", { ids: [reading.id] });
+  console.log(
+    "PASS adjustable reading speed, live changes and older-firmware compatibility",
   );
   const started = await api("snake", "POST", { action: "start" });
   await until(

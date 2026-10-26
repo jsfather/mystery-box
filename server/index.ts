@@ -56,6 +56,7 @@ const game = new SnakeController(
 const telemetry = z.object({
   online: z.boolean(),
   lcdScroll: z.boolean().optional(),
+  scrollSpeed: z.boolean().optional(),
   snake: z.boolean().optional(),
   errors: z.number().int().min(0).max(255).optional(),
   occurred: z.number().int().min(0).max(255).optional(),
@@ -133,12 +134,16 @@ client.on("message", (topic, payload, packet) => {
           store.audit(null, "device.recovered", { code: `E${bit + 1}` });
       }
     }
+    const speedCapabilityChanged =
+      (t.data.scrollSpeed === true) !== (device.scrollSpeed === true);
     device = {
       ...device,
       ...t.data,
+      scrollSpeed: t.data.scrollSpeed === true,
       online: t.data.online,
       lastSeen: t.data.online ? Date.now() : device.lastSeen,
     };
+    if (t.data.online && speedCapabilityChanged) publish(true);
   } catch {
     /* Ignore invalid device telemetry. */
   }
@@ -162,6 +167,7 @@ function publish(force = false) {
     frame.love,
     frame.clockTop,
     frame.scroll?.id,
+    frame.scroll?.stepMs,
     frame.clock || frame.love || frame.clockTop ? "" : frame.line1,
     frame.clock || frame.love || frame.scroll ? "" : frame.line2,
     frame.dateKey,
@@ -192,6 +198,20 @@ function publish(force = false) {
         stepMs: 300,
         phase: message
           ? (Date.now() - message.startsAt) % ((message.text.length + 4) * 300)
+          : 0,
+      },
+    };
+  }
+  if (modern && !device.scrollSpeed && packet.scroll) {
+    // Firmware 1.5/1.6 only accepts a 200 ms local step. Keep it connected while updating.
+    const message = messages.find((m) => m.id === packet.scroll!.id);
+    packet = {
+      ...packet,
+      scroll: {
+        ...packet.scroll,
+        stepMs: 200,
+        phase: message
+          ? (Date.now() - message.startsAt) % ((message.text.length + 4) * 200)
           : 0,
       },
     };

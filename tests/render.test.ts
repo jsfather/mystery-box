@@ -65,7 +65,7 @@ test("expired or cancelled messages never render; long messages scroll", () => {
     ...m,
     text: "Longer than thirty two characters so this should scroll across the LCD.",
   };
-  assert.notEqual(render(s(), [long], now).line2, render(s(), [long], now + 300).line2);
+  assert.notEqual(render(s(), [long], now).line2, render(s(), [long], now + 400).line2);
 });
 test("packed matrix maps first and last pixels MSB first", () => {
   const p = Array(96).fill(0);
@@ -140,4 +140,40 @@ test("old settings acquire safe messaging, schedule and counter defaults", () =>
     }).success,
   );
   assert.ok(messageSchema.safeParse({ text: "Default duration" }).success);
+});
+
+test("reading speed is migrated, validated and shared by frame text and local scroll commands", () => {
+  const legacy: any = s();
+  delete legacy.messaging.scrollStepMs;
+  assert.equal(settingsSchema.parse(legacy).messaging.scrollStepMs, 400);
+  const settings = s();
+  settings.messaging.mode = "clock";
+  const now = Date.parse("2026-10-26T12:00:00Z");
+  const message = {
+    id: "reading",
+    text: "ABCDEFGHIJKLMNOPQRSTUVWXYZ and a much longer note",
+    startsAt: now,
+    expiresAt: now + 120000,
+    createdAt: now,
+    cancelled: false,
+  };
+  for (const delay of [200, 350, 400, 600, 800, 1000]) {
+    settings.messaging.scrollStepMs = delay;
+    const first = render(settings, [message], now),
+      before = render(settings, [message], now + delay - 1),
+      next = render(settings, [message], now + delay);
+    assert.equal(first.line2, before.line2);
+    assert.notEqual(first.line2, next.line2);
+    assert.equal(next.scroll?.stepMs, delay);
+    assert.equal(next.scroll?.phase, delay);
+  }
+  for (const delay of [0, 150, 250.5, 225, 1001, 2000]) {
+    assert.equal(
+      settingsSchema.safeParse({
+        ...settings,
+        messaging: { ...settings.messaging, scrollStepMs: delay },
+      }).success,
+      false,
+    );
+  }
 });

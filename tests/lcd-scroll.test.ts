@@ -65,6 +65,19 @@ int main() {
   scroll.set("fast", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0, 5000, 0, 200);
   assert(scroll.untilNext(190) == 10);
   assert(scroll.draw(200, row) && !strcmp(row, "BCDEFGHIJKLMNOPQ"));
+  scroll.set("reading", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0, 5000, 0, 400);
+  assert(scroll.draw(399, row) && !strcmp(row, "ABCDEFGHIJKLMNOP"));
+  assert(scroll.draw(400, row) && !strcmp(row, "BCDEFGHIJKLMNOPQ"));
+  // Changing the speed mid-message preserves the visible character and progress.
+  scroll.set("reading", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0, 5000, 600, 800);
+  assert(scroll.draw(600, row) && !strcmp(row, "BCDEFGHIJKLMNOPQ"));
+  assert(scroll.untilNext(600) == 400);
+  assert(scroll.draw(999, row) && !strcmp(row, "BCDEFGHIJKLMNOPQ"));
+  assert(scroll.draw(1000, row) && !strcmp(row, "CDEFGHIJKLMNOPQR"));
+  scroll.set("reading", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0, 5000, 1100, 1000);
+  assert(scroll.draw(1100, row) && !strcmp(row, "CDEFGHIJKLMNOPQR"));
+  scroll.set("reading", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0, 5000, 1200, 0);
+  assert(scroll.draw(1200, row) && !strcmp(row, "CDEFGHIJKLMNOPQR"));
   PolledTransport<FakeTransport> transport;
   fakeNow = 0xfffffff0UL; assert(transport.connected());
   for (int i = 0; i < 100; ++i) assert(transport.connected());

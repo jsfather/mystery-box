@@ -329,7 +329,8 @@ void received(char* topic, byte* payload, unsigned int length) {
     const char* text = sc["text"] | "";
     if (!*key || strlen(key) > 80 || !*text || strlen(text) > 160 ||
         !sc["phase"].is<uint32_t>() || !sc["remaining"].is<uint32_t>() ||
-        ((sc["stepMs"] | 300) != 200 && (sc["stepMs"] | 300) != 300) ||
+        (!sc["stepMs"].isNull() && !sc["stepMs"].is<uint16_t>()) ||
+        (sc["stepMs"] | 300) < 200 || (sc["stepMs"] | 300) > 1000 || (sc["stepMs"] | 300) % 50 != 0 ||
         sc["phase"].as<uint32_t>() >= (strlen(text) + 4) * uint32_t(sc["stepMs"] | 300) ||
         sc["remaining"].as<uint32_t>() > 300000UL) { fault(7, true); return; }
     for (size_t i = 0; text[i]; ++i) if (text[i] < 32 || text[i] > 126) { fault(7, true); return; }
@@ -430,8 +431,8 @@ void telemetry() {
   doc["online"] = true;
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
-  doc["firmware"] = "1.6.1";
-  doc["lcdScroll"] = true; doc["snake"] = true;
+  doc["firmware"] = "1.7.0";
+  doc["lcdScroll"] = true; doc["scrollSpeed"] = true; doc["snake"] = true;
   doc["errors"] = errors;
   doc["occurred"] = occurred;
   doc["matrixRevision"] = matrixRevision;
@@ -565,7 +566,7 @@ void bootStep(const char* step) {
 
 void setup() {
   Serial.begin(115200);  // Never wait for USB Serial: run unattended.
-  Serial.println("Mystery Box firmware 1.6.1");
+  Serial.println("Mystery Box firmware 1.7.0");
   matrix.begin();
   matrix.clear();
   Wire.begin();

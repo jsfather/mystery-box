@@ -166,3 +166,12 @@ On **Messages**, use **Select** and the message checkboxes to delete up to 100 n
 Upload firmware 1.6.0 and manually redeploy the app to enable these changes. Broker permissions are unchanged from the Snake update; if that update has not been deployed yet, deploy both services together.
 
 Firmware 1.6.1 shows stationary **E1–E8** codes on the matrix using two compact glyphs. The code stays visible until recovery; multiple faults show the lowest active code.
+
+
+### Set a comfortable scrolling speed (firmware 1.7.0)
+
+In **Preferences → Scrolling speed**, move the slider toward **Slower** or **Faster** and use the live reading preview to choose your pace. Save message settings to apply it to the real LCD. The new default is one character every 400 ms, half the earlier 200 ms pace; the range is 200–1000 ms per character. A speed change keeps the currently visible character instead of restarting a message. Short notes remain stationary.
+
+The new-message alert now has a separate card with an accessible On/Off switch and a clear explanation, sized for both phone and desktop. Existing alert preferences are preserved.
+
+Firmware 1.7.0 reports configurable-speed support. When the app is updated before an older board, the server continues to send a compatible fixed-speed command until the new firmware connects. Deploy the matching app from the latest commit; no new broker permissions are needed.

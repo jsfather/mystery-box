@@ -133,7 +133,7 @@ test("authenticated API validates changes, rejects cross origin and serves SSE",
     assert.equal(defaultMessage.expiresAt - defaultMessage.startsAt, 120000);
     store.saveSettings({
       ...store.settings(),
-      messaging: { mode: "clock", defaultDuration: 60, blink: false },
+      messaging: { mode: "clock", defaultDuration: 60, blink: false, scrollStepMs: 400 },
     });
     const customDefault = await (
       await req("/api/messages", post({ text: "Our custom default" }, { Cookie: cookie }))

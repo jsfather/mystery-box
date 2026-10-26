@@ -10,11 +10,18 @@ public:
   bool active = false;
   void stop() { active = false; id[0] = 0; }
   void set(const char* key, const char* value, uint32_t phase, uint32_t remaining, uint32_t now, uint16_t step = 300) {
+    if (step < 200 || step > 1000 || step % 50) return;
     if (!active || strcmp(id, key) || strcmp(text, value)) {
       strncpy(id, key, 80); id[80] = 0;
       strncpy(text, value, 160); text[160] = 0;
       stepMs = step;
       started = now - phase;
+    } else if (stepMs != step) {
+      // Retain the current character and its fractional progress on a live speed change.
+      const uint32_t elapsed = now - started;
+      const uint32_t adjusted = (elapsed / stepMs) * step + (elapsed % stepMs) * step / stepMs;
+      stepMs = step;
+      started = now - adjusted;
     }
     received = now; lease = remaining; active = true;
   }
