@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { Check, Clock3, Ellipsis, Monitor, RotateCcw, X } from "lucide-react";
+import { useCallback, useRef } from "react";
+import { MessageMenu } from "./MessageMenu";
+import { Check, Clock3, Ellipsis, Monitor } from "lucide-react";
 import type { Message } from "../../shared/model";
 
 export function ConversationMessage({
@@ -12,6 +13,13 @@ export function ConversationMessage({
   timestamp,
   onCancel,
   onReplay,
+  onDelete,
+  onSelect,
+  selecting,
+  selected,
+  selectionDisabled,
+  menuOpen,
+  setOpenMenu,
 }: {
   message: Message;
   own: boolean;
@@ -22,8 +30,22 @@ export function ConversationMessage({
   timestamp: string;
   onCancel: () => void;
   onReplay: () => void;
+  onDelete: () => void;
+  onSelect: () => void;
+  selecting: boolean;
+  selected: boolean;
+  selectionDisabled: boolean;
+  menuOpen: boolean;
+  setOpenMenu: (id: string | null) => void;
 }) {
-  const [options, setOptions] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const closeMenu = useCallback(
+    (focus = false) => {
+      setOpenMenu(null);
+      if (focus) trigger.current?.focus({ preventScroll: true });
+    },
+    [setOpenMenu],
+  );
   const pending = !message.cancelled && message.expiresAt > now;
   const waiting = pending && message.startsAt > now;
   const StatusIcon = waiting ? Clock3 : Monitor;
@@ -32,6 +54,18 @@ export function ConversationMessage({
       className={`chat-message ${own ? "own" : "partner"}${grouped ? " grouped" : ""}${animate ? " arriving" : ""}`}
       aria-label={`Message from ${message.authorName ?? "Before accounts"}`}
     >
+      {selecting && (
+        <label className="message-select">
+          <input
+            id={`select-${message.id}`}
+            type="checkbox"
+            checked={selected}
+            disabled={selectionDisabled}
+            aria-label={`Select message: ${message.text}`}
+            onChange={onSelect}
+          />
+        </label>
+      )}
       <div className="chat-avatar" aria-hidden="true">
         {(message.authorName ?? "Us").slice(0, 1)}
       </div>
@@ -57,16 +91,26 @@ export function ConversationMessage({
               <Check size={12} aria-label="Saved to our conversation" />
             </div>
           </div>
-          <button
-            type="button"
-            className="chat-options"
-            aria-label={`Message options: ${message.text}`}
-            aria-expanded={options}
-            aria-controls={`actions-${message.id}`}
-            onClick={() => setOptions((value) => !value)}
-          >
-            <Ellipsis size={18} />
-          </button>
+          {!selecting && (
+            <button
+              ref={trigger}
+              type="button"
+              className="chat-options"
+              aria-label={`Message options: ${message.text}`}
+              aria-expanded={menuOpen}
+              aria-haspopup="menu"
+              aria-controls={menuOpen ? `actions-${message.id}` : undefined}
+              onClick={() => setOpenMenu(menuOpen ? null : message.id)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setOpenMenu(message.id);
+                }
+              }}
+            >
+              <Ellipsis size={18} />
+            </button>
+          )}
         </div>
         {pending && (
           <div className={`chat-status ${waiting ? "waiting" : "active"}`}>
@@ -75,31 +119,17 @@ export function ConversationMessage({
           </div>
         )}
         {message.cancelled && <div className="chat-status">LCD display cancelled</div>}
-        {options && (
-          <div id={`actions-${message.id}`} className="chat-action-list">
-            <button
-              type="button"
-              onClick={() => {
-                onReplay();
-                setOptions(false);
-              }}
-            >
-              <RotateCcw size={14} />
-              Show on box again
-            </button>
-            {pending && (
-              <button
-                type="button"
-                onClick={() => {
-                  onCancel();
-                  setOptions(false);
-                }}
-              >
-                <X size={14} />
-                Cancel LCD display
-              </button>
-            )}
-          </div>
+        {menuOpen && trigger.current && (
+          <MessageMenu
+            id={`actions-${message.id}`}
+            trigger={trigger.current}
+            pending={pending}
+            close={closeMenu}
+            replay={onReplay}
+            cancel={onCancel}
+            select={onSelect}
+            remove={onDelete}
+          />
         )}
       </div>
     </article>

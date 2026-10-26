@@ -5,6 +5,7 @@ import type { Config } from "./config.js";
 import type { Store } from "./store.js";
 import {
   messageSchema,
+  messageIdsSchema,
   settingsSchema,
   createUserSchema,
   updateUserSchema,
@@ -260,6 +261,24 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
     }
     res.json(store.history(before, String(req.query.q ?? "")));
   });
+  app.post("/api/messages/lookup", auth, (req, res) => {
+    const parsed = messageIdsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Choose 1–100 distinct message IDs" });
+      return;
+    }
+    res.json({ items: store.lookupMessages(parsed.data.ids) });
+  });
+  app.post("/api/messages/delete", auth, (req, res) => {
+    const parsed = messageIdsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Choose 1–100 distinct message IDs" });
+      return;
+    }
+    const result = store.deleteMessages(parsed.data.ids, res.locals.user);
+    if (result.deletedIds.length) runtime.changed();
+    res.json(result);
+  });
   app.post("/api/messages/:id/replay", auth, (req, res) => {
     const message = store.message(String(req.params.id));
     if (!message) {
@@ -279,14 +298,17 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
       res.status(409).json({ error: (e as Error).message });
     }
   });
-  app.delete("/api/messages/:id", auth, (req, res) => {
+  const cancelMessage: RequestHandler = (req, res) => {
     if (!store.cancel(String(req.params.id), res.locals.user)) {
       res.status(404).json({ error: "Message not found" });
       return;
     }
     runtime.changed();
     res.json({ ok: true });
-  });
+  };
+  // Keep DELETE cancellation compatible with older cached clients.
+  app.delete("/api/messages/:id", auth, cancelMessage);
+  app.post("/api/messages/:id/cancel", auth, cancelMessage);
   app.get("/api/users", auth, (_req, res) => res.json({ items: store.users() }));
   app.post("/api/users", auth, (req, res) => {
     const parsed = createUserSchema.safeParse(req.body);

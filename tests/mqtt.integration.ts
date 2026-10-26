@@ -153,10 +153,36 @@ try {
     (f) => !!f && f.clock,
   );
   console.log("PASS message and cancellation reach device");
+  const beforeDeletion = (await api("state")).historyRevision;
+  await api("settings", "PUT", {
+    ...defaults,
+    messaging: { ...defaults.messaging, blink: true },
+  });
+  const alert = await api("messages", "POST", {
+    text: "A bright new hello",
+    duration: 30,
+  });
+  await until(
+    async () => latest,
+    (f) => !!f && f.messageId === alert.id && f.notify && f.messageAge < 4000,
+  );
+  const removed = await api("messages/delete", "POST", { ids: [alert.id] });
+  assert.deepEqual(removed.deletedIds, [alert.id]);
+  await until(
+    async () => latest,
+    (f) => !!f && f.clock && f.messageId === "",
+  );
+  assert.equal((await api("state")).historyRevision, beforeDeletion + 1);
+  assert.equal(
+    (await api("messages/lookup", "POST", { ids: [alert.id] })).items.length,
+    0,
+  );
+  console.log("PASS new-message alert intent and deletion stop active LCD output");
+
   await api("settings", "PUT", {
     ...defaults,
     timezone: "UTC",
-    messaging: { mode: "clock", defaultDuration: 120 },
+    messaging: { mode: "clock", defaultDuration: 120, blink: false },
   });
   const chat = await api("messages", "POST", {
     text: "Our conversation reaches the little box",

@@ -1,10 +1,19 @@
 import { Fragment, useCallback, useEffect, useState, useRef } from "react";
-import { MessageSquare, RefreshCcw, ChevronDown, Heart, NotebookPen } from "lucide-react";
+import {
+  MessageSquare,
+  RefreshCcw,
+  ChevronDown,
+  Heart,
+  NotebookPen,
+  CheckSquare,
+  Trash2,
+} from "lucide-react";
 import type { Snapshot, Message, ActivityEntry, User } from "../../shared/model";
 import { ConversationMessage } from "./ConversationMessage";
 import { MessageSearch } from "./MessageSearch";
 import { MessageComposer } from "./MessageComposer";
 import { api } from "./api";
+import { DeleteMessagesDialog } from "./DeleteMessagesDialog";
 import { deviceErrors, errorLabel } from "../../shared/errors";
 export function MessageHistory({
   snapshot,
@@ -15,6 +24,52 @@ export function MessageHistory({
   notice: (s: string) => void;
   me: User;
 }) {
+  const [selecting, setSelecting] = useState(false),
+    [selected, setSelected] = useState(new Set<string>());
+  const [openMenu, setOpenMenu] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<string[] | null>(null),
+    [deleting, setDeleting] = useState(false),
+    [deleteError, setDeleteError] = useState("");
+  const deleted = useRef(new Set<string>()),
+    itemsRef = useRef<Message[]>([]);
+  const historyRevision = useRef(snapshot.historyRevision ?? 0);
+  const selectButton = useRef<HTMLButtonElement>(null);
+  const choose = (id: string) => {
+    setOpenMenu(null);
+    setSelecting(true);
+    requestAnimationFrame(() =>
+      document.getElementById(`select-${id}`)?.focus({ preventScroll: true }),
+    );
+    setSelected((old) => {
+      const next = new Set(old);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < 100) next.add(id);
+      return next;
+    });
+  };
+  const confirmDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    setDeleteError("");
+    try {
+      const result = await api("messages/delete", "POST", { ids: toDelete });
+      for (const id of result.deletedIds) deleted.current.add(id);
+      ++requestId.current; // Discard any history fetch started before deletion.
+      setBusy(false);
+      setItems((old) => old.filter((message) => !deleted.current.has(message.id)));
+      setSelected(new Set());
+      setSelecting(false);
+      setToDelete(null);
+      notice(
+        `${result.deletedIds.length} ${result.deletedIds.length === 1 ? "message" : "messages"} deleted`,
+      );
+      requestAnimationFrame(() => selectButton.current?.focus({ preventScroll: true }));
+    } catch (e) {
+      setDeleteError((e as Error).message);
+    } finally {
+      setDeleting(false);
+    }
+  };
   const [items, setItems] = useState<Message[]>([]),
     [next, setNext] = useState<number | null>(null),
     [search, setSearch] = useState(""),
@@ -28,6 +83,7 @@ export function MessageHistory({
     activeSearch = useRef(search);
   const openedAt = useRef(snapshot.serverTime),
     seen = useRef(new Set<string>());
+  itemsRef.current = items;
   const [arriving, setArriving] = useState(new Set<string>());
   useEffect(() => {
     if (!arriving.size) return;
@@ -54,12 +110,15 @@ export function MessageHistory({
         );
         if (request !== requestId.current) return;
         for (const message of result.items) seen.current.add(message.id);
+        const fetched: Message[] = result.items.filter(
+          (message: Message) => !deleted.current.has(message.id),
+        );
         setItems((old) =>
           before
-            ? [...result.items, ...old].filter(
+            ? [...fetched, ...old].filter(
                 (m, i, all) => all.findIndex((v) => v.id === m.id) === i,
               )
-            : result.items,
+            : fetched,
         );
         setNext(result.nextCursor);
         initialized.current = true;
@@ -76,6 +135,8 @@ export function MessageHistory({
     [search, scrollBottom],
   );
   useEffect(() => {
+    setSelected(new Set());
+    setOpenMenu(null);
     activeSearch.current = search;
     initialized.current = false;
     setBusy(true);
@@ -87,8 +148,9 @@ export function MessageHistory({
   }, [load, search]);
   useEffect(() => {
     if (!initialized.current || activeSearch.current !== search) return;
-    const matches = snapshot.messages.filter((m) =>
-      m.text.toLowerCase().includes(search.toLowerCase()),
+    const matches = snapshot.messages.filter(
+      (m) =>
+        !deleted.current.has(m.id) && m.text.toLowerCase().includes(search.toLowerCase()),
     );
     const fresh = matches.filter(
       (m) => !seen.current.has(m.id) && m.createdAt >= openedAt.current,
@@ -103,6 +165,42 @@ export function MessageHistory({
     if (nearBottom.current) requestAnimationFrame(scrollBottom);
     else setUnseen(true);
   }, [signature, search, scrollBottom]);
+  useEffect(() => {
+    const revision = snapshot.historyRevision ?? 0;
+    if (revision <= historyRevision.current) return;
+    ++requestId.current;
+    setBusy(false);
+    if (!initialized.current) {
+      historyRevision.current = revision;
+      void load();
+      return;
+    }
+    let cancelled = false;
+    const ids = itemsRef.current.map((item) => item.id);
+    void (async () => {
+      try {
+        const missing = new Set<string>();
+        for (let start = 0; start < ids.length; start += 100) {
+          const batch = ids.slice(start, start + 100);
+          const result = await api("messages/lookup", "POST", { ids: batch });
+          if (cancelled) return;
+          const existing = new Set(result.items.map((item: Message) => item.id));
+          for (const id of batch) if (!existing.has(id)) missing.add(id);
+        }
+        if (cancelled) return;
+        historyRevision.current = revision;
+        for (const id of missing) deleted.current.add(id);
+        setItems((old) => old.filter((item) => !missing.has(item.id)));
+        setSelected((old) => new Set([...old].filter((id) => !missing.has(id))));
+        setOpenMenu((old) => (old && missing.has(old) ? null : old));
+      } catch (e) {
+        if (!cancelled) setError((e as Error).message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshot.historyRevision]);
   const formatter = new Intl.DateTimeFormat("en-GB", {
     timeZone: snapshot.settings.timezone,
     dateStyle: "medium",
@@ -135,7 +233,74 @@ export function MessageHistory({
         </div>
         <Heart size={22} />
       </div>
-      <MessageSearch value={search} onChange={setSearch} />
+      <div className="message-management">
+        <MessageSearch value={search} onChange={setSearch} />
+        <button
+          ref={selectButton}
+          type="button"
+          className="secondary"
+          disabled={(!items.length && !selecting) || deleting}
+          aria-pressed={selecting}
+          onClick={() => {
+            setSelecting(!selecting);
+            setSelected(new Set());
+            setOpenMenu(null);
+          }}
+        >
+          <CheckSquare size={16} />
+          {selecting ? "Done" : "Select"}
+        </button>
+      </div>
+      {selecting && (
+        <div
+          className="message-selection-bar"
+          role="region"
+          aria-label="Selected messages"
+        >
+          <label>
+            <input
+              disabled={!items.length}
+              type="checkbox"
+              checked={
+                !!items.length &&
+                items.slice(0, 100).every((item) => selected.has(item.id))
+              }
+              onChange={(e) =>
+                setSelected(
+                  e.target.checked
+                    ? new Set(items.slice(0, 100).map((item) => item.id))
+                    : new Set(),
+                )
+              }
+            />
+            {items.length > 100 ? "Select first 100 loaded" : "Select all loaded"}
+          </label>
+          <span aria-live="polite">{selected.size} selected</span>
+          <button
+            type="button"
+            className="secondary message-delete-button"
+            disabled={!selected.size || deleting}
+            onClick={() => {
+              setDeleteError("");
+              setToDelete([...selected]);
+            }}
+          >
+            <Trash2 size={16} />
+            Delete selected
+          </button>
+        </div>
+      )}
+      {toDelete && (
+        <DeleteMessagesDialog
+          count={toDelete.length}
+          busy={deleting}
+          error={deleteError}
+          onCancel={() => {
+            if (!deleting) setToDelete(null);
+          }}
+          onConfirm={confirmDelete}
+        />
+      )}
       {error && (
         <p role="alert" className="error">
           {error}
@@ -200,8 +365,18 @@ export function MessageHistory({
                 now={snapshot.serverTime}
                 time={time.format(message.createdAt)}
                 timestamp={formatter.format(message.createdAt)}
+                selecting={selecting}
+                selected={selected.has(message.id)}
+                selectionDisabled={!selected.has(message.id) && selected.size >= 100}
+                menuOpen={openMenu === message.id}
+                setOpenMenu={setOpenMenu}
+                onSelect={() => choose(message.id)}
+                onDelete={() => {
+                  setDeleteError("");
+                  setToDelete([message.id]);
+                }}
                 onCancel={() =>
-                  api(`messages/${message.id}`, "DELETE").catch((e) =>
+                  api(`messages/${message.id}/cancel`, "POST").catch((e) =>
                     setError(e.message),
                   )
                 }
@@ -249,6 +424,7 @@ const labels: Record<string, string> = {
   "factory.reset": "Restored factory settings",
   "settings.updated": "Changed our box settings",
   "message.sent": "Sent a little note",
+  "message.deleted": "Deleted saved messages",
   "message.cancelled": "Cancelled a note",
   "user.created": "Made room for another person",
   "user.bootstrapped": "Opened an account",
@@ -356,6 +532,8 @@ export function ActivityPage({
               </h3>
               <p>
                 {entry.actorName}
+                {entry.action === "message.deleted" &&
+                  ` · ${entry.details.count} deleted`}
                 {Array.isArray(entry.details.fields) && entry.details.fields.length
                   ? ` · ${entry.details.fields.join(", ")}`
                   : ""}

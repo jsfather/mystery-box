@@ -94,6 +94,9 @@ export function render(
     }
   }
   return {
+    messageId: active?.id ?? "",
+    notify: s.messaging.blink,
+    messageAge: active ? now - active.startsAt : 0,
     v: 1,
     seq,
     epoch: Math.floor(now / 1000),

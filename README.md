@@ -155,3 +155,12 @@ Deploy the matching app and broker, then open **Play Snake** and select **Start 
 One browser controls a game at a time. Other signed-in users can watch. Controls pause when the page loses focus, and the board pauses on a lost connection. Leaving the page ends the game; if that request is lost, ownership expires after eight seconds. Errors keep priority on the matrix. No new credentials or dependencies are needed. Firmware 1.5.0 is required; the existing “Neon snake” studio preset remains an animation.
 
 **Deploy both services:** the broker now authorizes `mystery-box/<device>/game` commands and `.../game/state` responses. Deploying only the frontend/app will leave Snake waiting for a board response. The firmware startup log explicitly identifies a legacy server that still streams scrolling positions. Smooth local scrolling requires the server update as well as the uploaded firmware.
+
+
+### New-message flashes and managing the conversation (firmware 1.6.0)
+
+Open **Preferences → Flash both displays for new messages** to enable a strong alert: six flashes of the LCD backlight and the full LED matrix over three seconds when each queued note reaches the box. The option starts off. Message refreshes do not retrigger it, and older messages do not flash after reconnecting. Existing backlight and matrix settings return afterward. Device errors take priority; Snake pauses during an alert and requires Resume afterward.
+
+On **Messages**, use **Select** and the message checkboxes to delete up to 100 notes at once, or choose **Delete message…** in a note’s three-dot menu. The confirmation gives the exact count. Deletion permanently removes the notes for both accounts and stops any remaining LCD display. **Stop LCD display** only cancels display and keeps the note in the conversation. The menu supports arrow keys, Home/End, Escape, outside-click dismissal and scrolling; its placement stays within the screen.
+
+Upload firmware 1.6.0 and manually redeploy the app to enable these changes. Broker permissions are unchanged from the Snake update; if that update has not been deployed yet, deploy both services together.

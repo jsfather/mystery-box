@@ -1,0 +1,181 @@
+.message-menu {
+  position: fixed;
+  z-index: 1000;
+  width: min(248px, calc(100vw - 24px));
+  padding: 7px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow:
+    0 12px 40px #071a2330,
+    0 2px 8px #071a2310;
+}
+.message-menu-label {
+  display: block;
+  padding: 8px 10px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.3px;
+}
+.message-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 10px;
+  min-height: 44px;
+  text-align: left;
+  font-size: 13px;
+  border-radius: 9px;
+  color: var(--ink);
+}
+.message-menu button:hover,
+.message-menu button:focus-visible {
+  background: var(--surface-soft);
+}
+.message-menu [role="separator"] {
+  height: 1px;
+  margin: 6px 4px;
+  background: var(--border);
+}
+.message-menu button.message-menu-delete,
+.message-delete-button {
+  color: var(--danger);
+}
+.message-management {
+  display: flex;
+  gap: 12px;
+  align-items: start;
+}
+.message-management > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.message-management > button {
+  flex: none;
+  min-height: 44px;
+}
+.message-selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  margin: 0 0 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  border-radius: 12px;
+  font-size: 12px;
+}
+.message-selection-bar label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.message-selection-bar > span {
+  margin-right: auto;
+  color: var(--muted);
+}
+.message-select {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  min-height: 44px;
+  align-self: center;
+}
+.message-select input,
+.message-selection-bar input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+.chat-message:has(.message-select input:checked) .chat-bubble {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+.delete-messages-dialog {
+  max-width: min(460px, calc(100vw - 32px));
+  margin: auto;
+  padding: 28px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 24px 80px #071a2340;
+}
+.delete-messages-dialog::backdrop {
+  background: #071a2370;
+  backdrop-filter: blur(3px);
+}
+.delete-dialog-icon {
+  display: inline-grid;
+  place-items: center;
+  padding: 12px;
+  background: var(--rose-light);
+  color: var(--danger);
+  border-radius: 14px;
+  margin-bottom: 18px;
+}
+.delete-messages-dialog h2 {
+  font-size: 22px;
+  margin-bottom: 12px;
+}
+.delete-messages-dialog p {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--muted);
+}
+.delete-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+.message-alert-setting {
+  display: flex;
+  align-items: start;
+  gap: 12px;
+  padding: 16px;
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.message-alert-setting > input {
+  width: 19px;
+  height: 19px;
+  flex: none;
+  margin-top: 3px;
+  accent-color: var(--green);
+}
+.message-alert-setting span {
+  display: grid;
+  gap: 6px;
+}
+.message-alert-setting small {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted);
+  font-weight: 400;
+}
+@media (max-width: 600px) {
+  .message-management {
+    gap: 8px;
+  }
+  .message-selection-bar {
+    gap: 8px;
+    padding: 10px;
+  }
+  .message-select {
+    flex-basis: 22px;
+  }
+  .chat-message:has(.message-select) .chat-avatar {
+    display: none;
+  }
+  .delete-messages-dialog {
+    padding: 22px;
+  }
+}

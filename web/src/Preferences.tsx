@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Settings2, TriangleAlert, Sun, Moon, Monitor } from "lucide-react";
 import type { Snapshot } from "../../shared/model";
 import { api, type SaveSettings } from "./api";
+import "./message-actions.css";
 declare global {
   interface Window {
     mbSetTheme: (value: string) => void;
@@ -112,6 +113,24 @@ export function Preferences({
         <p className="input-note">
           Long messages scroll. The clock stays live in the top row when you choose the
           second layout.
+        </p>
+        <label className="message-alert-setting" htmlFor="message-blink">
+          <input
+            id="message-blink"
+            type="checkbox"
+            checked={messaging.blink}
+            onChange={(e) => setMessaging({ ...messaging, blink: e.target.checked })}
+          />
+          <span>
+            <strong>Flash both displays for new messages</strong>
+            <small>
+              Six bright flashes over three seconds when each note reaches the box. Snake
+              pauses during the alert.
+            </small>
+          </span>
+        </label>
+        <p className="input-note">
+          Off by default. Requires firmware 1.6.0 and the matching server update.
         </p>
         <label htmlFor="default-duration">Default time on the box</label>
         <select

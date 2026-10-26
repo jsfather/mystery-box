@@ -64,10 +64,11 @@ export const settingsSchema = z
     messaging: z
       .object({
         mode: z.enum(["full", "clock"]),
+        blink: z.boolean().default(false),
         defaultDuration: z.number().int().min(5).max(300),
       })
       .strict()
-      .default({ mode: "full", defaultDuration: 120 }),
+      .default({ mode: "full", defaultDuration: 120, blink: false }),
     love: loveSchema.default({
       format: "daysClock",
       startAt: null,
@@ -111,7 +112,7 @@ export type Settings = z.infer<typeof settingsSchema>;
 export const defaults: Settings = {
   displayMode: "clock",
   schedule: { everyMinutes: 10, durationSeconds: 30 },
-  messaging: { mode: "full", defaultDuration: 120 },
+  messaging: { mode: "full", defaultDuration: 120, blink: false },
   love: {
     format: "daysClock",
     startAt: null,
@@ -153,6 +154,9 @@ export interface Message {
   cursor?: number;
 }
 export interface Frame {
+  messageId: string;
+  notify: boolean;
+  messageAge: number;
   v: 1;
   seq: number;
   epoch: number;
@@ -198,6 +202,7 @@ export interface Device {
   seq: number | null;
 }
 export interface Snapshot {
+  historyRevision?: number;
   snake?: SnakeSnapshot | null;
   settings: Settings;
   frame: Frame;
@@ -250,5 +255,21 @@ export const updateUserSchema = z
     enabled: z.boolean().optional(),
     password: passwordSchema.optional(),
     currentPassword: z.string().max(256).optional(),
+  })
+  .strict();
+
+export const messageIdsSchema = z
+  .object({
+    ids: z
+      .array(
+        z
+          .string()
+          .min(1)
+          .max(80)
+          .regex(/^[A-Za-z0-9_-]+$/),
+      )
+      .min(1)
+      .max(100)
+      .refine((ids) => new Set(ids).size === ids.length, "Choose each message only once"),
   })
   .strict();

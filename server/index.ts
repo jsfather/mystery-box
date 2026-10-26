@@ -156,6 +156,8 @@ function publish(force = false) {
   frame = render(settings, messages, Date.now(), (seq = (seq + 1) >>> 0));
   const modern = device.lcdScroll === true;
   const signature = JSON.stringify([
+    frame.messageId,
+    frame.notify,
     frame.clock,
     frame.love,
     frame.clockTop,
@@ -223,6 +225,7 @@ const snapshot = (): Snapshot => ({
   deviceId: config.DEVICE_ID,
   settingsRevision: store.revision(),
   resetRevision: store.resetRevision(),
+  historyRevision: store.historyRevision(),
 });
 const app = createApp(config, store, {
   snapshot,

@@ -27,7 +27,8 @@ export class Store {
    CREATE TABLE IF NOT EXISTS activity(id INTEGER PRIMARY KEY AUTOINCREMENT,createdAt INTEGER NOT NULL,actorId TEXT,actorName TEXT NOT NULL,action TEXT NOT NULL,details TEXT NOT NULL);
    CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value INTEGER NOT NULL);
    INSERT OR IGNORE INTO metadata VALUES('settingsRevision',0);
-   INSERT OR IGNORE INTO metadata VALUES('resetRevision',0);`);
+   INSERT OR IGNORE INTO metadata VALUES('resetRevision',0);
+   INSERT OR IGNORE INTO metadata VALUES('historyRevision',0);`);
     const columns = this.db
       .prepare("PRAGMA table_info(messages)")
       .all()
@@ -104,7 +105,10 @@ export class Store {
         .prepare("UPDATE settings SET body=? WHERE id=1")
         .run(JSON.stringify(defaults));
       this.db.exec("UPDATE metadata SET value=value+1 WHERE key='settingsRevision'");
-      if (eraseHistory) this.db.exec("DELETE FROM messages; DELETE FROM activity;");
+      if (eraseHistory)
+        this.db.exec(
+          "DELETE FROM messages; DELETE FROM activity; UPDATE metadata SET value=value+1 WHERE key='historyRevision';",
+        );
       else
         this.db.exec(
           "UPDATE messages SET cancelled=1 WHERE cancelled=0 AND expiresAt > " +
@@ -178,6 +182,38 @@ export class Store {
           .run(id).changes > 0;
       if (changed && actor) this.audit(actor, "message.cancelled", { messageId: id });
       return changed;
+    });
+  }
+  historyRevision(): number {
+    return Number(
+      this.db.prepare("SELECT value FROM metadata WHERE key='historyRevision'").get()!
+        .value,
+    );
+  }
+  lookupMessages(ids: string[]): Message[] {
+    if (!ids.length || ids.length > 100) throw new Error("Choose 1–100 messages");
+    return this.mapMessages(
+      this.db
+        .prepare(
+          `SELECT rowid AS cursor,* FROM messages WHERE id IN (${ids.map(() => "?").join(",")})`,
+        )
+        .all(...ids),
+    );
+  }
+  deleteMessages(ids: string[], actor: User) {
+    if (!ids.length || ids.length > 100) throw new Error("Choose 1–100 messages");
+    return this.atomic(() => {
+      const deletedIds = this.lookupMessages(ids).map((message) => message.id);
+      if (deletedIds.length) {
+        this.db
+          .prepare(
+            `DELETE FROM messages WHERE id IN (${deletedIds.map(() => "?").join(",")})`,
+          )
+          .run(...deletedIds);
+        this.db.exec("UPDATE metadata SET value=value+1 WHERE key='historyRevision'");
+        this.audit(actor, "message.deleted", { count: deletedIds.length });
+      }
+      return { deletedIds, revision: this.historyRevision() };
     });
   }
   users(): User[] {
