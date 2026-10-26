@@ -619,7 +619,9 @@ function App() {
               {page === "people" && me && (
                 <PeoplePage me={me} onMeChange={setMe} onSignOut={signOut} />
               )}
-              {page === "activity" && <ActivityPage timezone={s.settings.timezone} />}
+              {page === "activity" && (
+                <ActivityPage timezone={s.settings.timezone} errors={s.device.errors} />
+              )}
               {page === "preferences" && (
                 <Preferences snapshot={s} save={save} notice={notice} />
               )}

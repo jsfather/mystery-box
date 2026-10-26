@@ -5,6 +5,7 @@ import { ConversationMessage } from "./ConversationMessage";
 import { MessageSearch } from "./MessageSearch";
 import { MessageComposer } from "./MessageComposer";
 import { api } from "./api";
+import { deviceErrors, errorLabel } from "../../shared/errors";
 export function MessageHistory({
   snapshot,
   notice,
@@ -258,12 +259,20 @@ const labels: Record<string, string> = {
   "broker.error": "The message connection needs a little attention",
   "broker.connected": "The message connection is ready",
   "broker.disconnected": "The message connection paused",
+  "device.error": "Our box reported an error",
+  "device.recovered": "Our box recovered",
   "device.online": "Our little box came online",
   "device.offline": "Our little box went offline",
   "server.started": "Our little world started up",
   "server.stopped": "Our little world shut down",
 };
-export function ActivityPage({ timezone }: { timezone: string }) {
+export function ActivityPage({
+  timezone,
+  errors = 0,
+}: {
+  timezone: string;
+  errors?: number;
+}) {
   const [items, setItems] = useState<ActivityEntry[]>([]),
     [next, setNext] = useState<number | null>(null),
     [error, setError] = useState(""),
@@ -305,6 +314,27 @@ export function ActivityPage({ timezone }: { timezone: string }) {
           {error}
         </p>
       )}
+      <details className="error-guide" open>
+        <summary>Error code guide</summary>
+        <p className="input-note">
+          The LED matrix scrolls the lowest active code and resumes your animation when
+          all errors clear. Disconnected errors are reported here after reconnection; the
+          journal may miss events during power loss.
+        </p>
+        <dl className="error-codes">
+          {deviceErrors.map((entry, bit) => (
+            <div key={entry.code}>
+              <dt>
+                <strong>
+                  {entry.code} · {entry.meaning}
+                </strong>
+                {(errors & (1 << bit)) !== 0 && <span> · Last reported active</span>}
+              </dt>
+              <dd>{entry.remedy}</dd>
+            </div>
+          ))}
+        </dl>
+      </details>
       <div className="timeline">
         {items.map((entry) => (
           <article key={entry.id}>
@@ -318,7 +348,12 @@ export function ActivityPage({ timezone }: { timezone: string }) {
               )}
             </span>
             <div>
-              <h3>{labels[entry.action] ?? entry.action}</h3>
+              <h3>
+                {labels[entry.action] ?? entry.action}
+                {(entry.action === "device.error" ||
+                  entry.action === "device.recovered") &&
+                  ` · ${entry.details.code}: ${errorLabel(entry.details.code)}`}
+              </h3>
               <p>
                 {entry.actorName}
                 {Array.isArray(entry.details.fields) && entry.details.fields.length

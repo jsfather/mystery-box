@@ -16,6 +16,7 @@
 #include "steady_clock.h"
 #include "heartbeat.h"
 #include "matrix_program.h"
+#include "lcd_scroll.h"
 
 #if MQTT_TLS
 WiFiSSLClient transport;
@@ -51,6 +52,42 @@ int32_t loveOffset = 0;
 char loveTitle[17] = "YOU & ME <3";
 char displayed[2][17] = {{0}, {0}}, cachedDate[17] = "Waiting for time";
 uint8_t pixels[8][12] = {{0}};
+LcdScroll scroll;
+uint8_t errors = 0, occurred = 0, shownError = 0, reportedErrors = 0;
+uint16_t programFrames = 0;
+uint32_t errorFrames[42][4]; // Two-character scrolling codes, independent of user animation.
+bool mqttReady = false, brokerConnected = false, statusLight = false;
+uint32_t waitingSince = 0;
+
+void fault(uint8_t code, bool active) {
+  const uint8_t bit = 1U << (code - 1);
+  if (active && !(errors & bit)) {
+    occurred |= bit;
+    Serial.print("Error E"); Serial.println(code);
+  }
+  if (active) errors |= bit;
+  else errors &= ~bit;
+}
+
+void drawError() {
+  uint8_t code = 0;
+  for (uint8_t i = 1; i <= 8; ++i) if (errors & (1U << (i - 1))) { code = i; break; }
+  if (code == shownError) return;
+  noInterrupts(); matrix.autoscroll(0); interrupts();
+  shownError = code;
+  if (code) {
+    char label[] = {'E', char('0' + code), 0};
+    const uint16_t count = MatrixProgram::build("text", 7, label, nullptr, 0, errorFrames);
+    matrix.loadWrapper(errorFrames, count * sizeof(errorFrames[0]));
+    matrix.play(true);
+  } else if (matrixProgramReady) {
+    matrix.loadWrapper(matrixFrames, programFrames * sizeof(matrixFrames[0]));
+    matrix.play(true);
+  } else if (localHeart) {
+    matrix.loadSequence(heartFrames); matrix.play(true);
+  } else matrix.renderBitmap(pixels, 8, 12);
+}
+
 
 // Signed deadline comparison and unsigned elapsed times survive millis() rollover.
 bool due(uint32_t now, uint32_t deadline) {
@@ -64,10 +101,21 @@ void row(uint8_t index, const char* text) {
   size_t n = strlen(text);
   if (n > 16) n = 16;
   memcpy(padded, text, n);
-  // Write only changed rows: no lcd.clear() flicker in the main loop.
+  // Write only changed spans: no lcd.clear() flicker in the main loop.
   if (lcdReady && memcmp(displayed[index], padded, 16) != 0) {
-    lcd.setCursor(0, index);
-    lcd.print(padded);
+    for (uint8_t at = 0; at < 16;) {
+      if (displayed[index][at] == padded[at]) { ++at; continue; }
+      if (lcd.setCursor(at, index) != 0) {
+        lcdReady = false; fault(1, true); return;
+      }
+      do {
+        if (lcd.write((uint8_t)padded[at]) != 1) {
+          lcdReady = false; fault(1, true); return;
+        }
+        ++at;
+      }
+      while (at < 16 && displayed[index][at] != padded[at]);
+    }
     memcpy(displayed[index], padded, 17);
   }
 }
@@ -98,37 +146,41 @@ bool lcdLine(const char* text) {
 }
 
 void receivedMatrix(byte* payload, unsigned int length) {
-  if(length>1024) return;
+  if(length>1024) { fault(8, true); return; }
   JsonDocument doc;
-  if(deserializeJson(doc,payload,length) || (doc["v"]|0)!=1 || !doc["revision"].is<uint32_t>())return;
+  if(deserializeJson(doc,payload,length) || (doc["v"]|0)!=1 || !doc["revision"].is<uint32_t>()){ fault(8, true); return; }
   const uint32_t revision=doc["revision"].as<uint32_t>();
-  if(matrixProgramReady && revision==matrixRevision)return;
+  if(matrixProgramReady && revision==matrixRevision) { fault(8, false); return; }
   const char* mode=doc["mode"]|"", *text=doc["text"]|"";
   const int speed=doc["speed"]|0;
-  if(speed<1||speed>10||strlen(text)>80)return;
-  for(unsigned i=0;i<strlen(text);i++)if(text[i]<32||text[i]>126)return;
-  if(strcmp(mode,"heart")&&strcmp(mode,"off")&&strcmp(mode,"text")&&strcmp(mode,"custom")&&MatrixProgram::presetIndex(mode)<0)return;
+  if(speed<1||speed>10||strlen(text)>80){ fault(8, true); return; }
+  for(unsigned i=0;i<strlen(text);i++)if(text[i]<32||text[i]>126){ fault(8, true); return; }
+  if(strcmp(mode,"heart")&&strcmp(mode,"off")&&strcmp(mode,"text")&&strcmp(mode,"custom")&&MatrixProgram::presetIndex(mode)<0){ fault(8, true); return; }
   const char* custom[32];
   const JsonArray array=doc["frames"].as<JsonArray>();
   const unsigned count=array.size();
-  if(count>32 || (!strcmp(mode,"custom") && count==0))return;
+  if(count>32 || (!strcmp(mode,"custom") && count==0)){ fault(8, true); return; }
   for(unsigned f=0;f<count;f++) {
     custom[f]=array[f]|"";
-    if(strlen(custom[f])!=24)return;
-    for(int i=0;i<24;i++)if(hexValue(custom[f][i])<0)return;
+    if(strlen(custom[f])!=24){ fault(8, true); return; }
+    for(int i=0;i<24;i++)if(hexValue(custom[f][i])<0){ fault(8, true); return; }
   }
   // Stop only while replacing the sequence. Steady playback thereafter is
   // handled entirely by the matrix hardware timer, including during reconnects.
   noInterrupts();
-  matrix.autoscroll(0);
+  if (!shownError) matrix.autoscroll(0);
   interrupts();
   const uint16_t frames=MatrixProgram::build(mode,speed,text,custom,count,matrixFrames);
   noInterrupts();
-  matrix.loadWrapper(matrixFrames,frames*sizeof(matrixFrames[0]));
-  matrix.play(true);
+  programFrames = frames;
+  if (!shownError) {
+    matrix.loadWrapper(matrixFrames,frames*sizeof(matrixFrames[0]));
+    matrix.play(true);
+  }
   interrupts();
   matrixProgramReady=true;
   matrixRevision=revision;
+  fault(8, false);
   Serial.print("Local matrix program: "); Serial.print(mode);
   Serial.print("; frames: "); Serial.print(frames);
   Serial.print("; revision: "); Serial.println(revision);
@@ -136,37 +188,48 @@ void receivedMatrix(byte* payload, unsigned int length) {
 
 void received(char* topic, byte* payload, unsigned int length) {
   if(!strcmp(topic,MATRIX_TOPIC)) { receivedMatrix(payload,length); return; }
-  if (strcmp(topic, FRAME_TOPIC) != 0 || length > 768) return;
+  if (strcmp(topic, FRAME_TOPIC) != 0) return;
+  if (length > 1280) { fault(7, true); return; }
   JsonDocument doc;
-  if (deserializeJson(doc, payload, length) || doc["v"].as<int>() != 1) return;
+  if (deserializeJson(doc, payload, length) || doc["v"].as<int>() != 1) { fault(7, true); return; }
   const char* a = doc["line1"] | "";
   const char* b = doc["line2"] | "";
   const char* hex = doc["matrix"] | "";
   if (!lcdLine(a) || !lcdLine(b) || strlen(hex) != 24 ||
       !doc["epoch"].is<uint32_t>() || !doc["offset"].is<int32_t>() ||
-      !doc["dateKey"].is<int32_t>()) return;
+      !doc["dateKey"].is<int32_t>()) { fault(7, true); return; }
   for (uint8_t i = 0; i < 24; i++) {
-    if (hexValue(hex[i]) < 0) return;
+    if (hexValue(hex[i]) < 0) { fault(7, true); return; }
+  }
+  JsonVariant sc = doc["scroll"];
+  if (!sc.isNull()) {
+    const char* key = sc["id"] | "";
+    const char* text = sc["text"] | "";
+    if (!*key || strlen(key) > 80 || !*text || strlen(text) > 160 ||
+        !sc["phase"].is<uint32_t>() || !sc["remaining"].is<uint32_t>() ||
+        sc["phase"].as<uint32_t>() >= (strlen(text) + 4) * 300UL ||
+        sc["remaining"].as<uint32_t>() > 300000UL) { fault(7, true); return; }
+    for (size_t i = 0; text[i]; ++i) if (text[i] < 32 || text[i] > 126) { fault(7, true); return; }
   }
   const uint32_t now = millis(), epoch = doc["epoch"].as<uint32_t>();
   const int32_t offset = doc["offset"].as<int32_t>();
   if (epoch < 1700000000UL || epoch > 4102444800UL ||
-      offset < -50400 || offset > 50400) return;
+      offset < -50400 || offset > 50400) { fault(7, true); return; }
 
   const char* title = doc["loveTitle"] | "YOU & ME <3";
-  if (strlen(title) < 1 || strlen(title) > 16) return;
+  if (strlen(title) < 1 || strlen(title) > 16) { fault(7, true); return; }
   for (size_t i = 0; i < strlen(title); i++) {
-    if (title[i] < 32 || title[i] > 126) return;
+    if (title[i] < 32 || title[i] > 126) { fault(7, true); return; }
   }
   const uint16_t fraction = doc["ms"] | 0;
-  if (fraction > 999) return;
+  if (fraction > 999) { fault(7, true); return; }
   const uint64_t frameMs = (uint64_t)epoch * 1000 + fraction;
-  if (frameMs < newestFrameMs) return;
+  if (frameMs < newestFrameMs) { fault(7, false); return; }
   newestFrameMs = frameMs;
   displayClock.sample(frameMs, now);
   if (!synced) {
     RTCTime t((time_t)epoch);
-    RTC.setTime(t);
+    if (!RTC.setTime(t)) fault(2, true);
     synced = true;
   }
   loveEnabled = (doc["loveEnabled"] | false) && doc["loveSince"].is<uint32_t>();
@@ -193,15 +256,14 @@ void received(char* topic, byte* payload, unsigned int length) {
     // The LED library advances sequences in its hardware timer ISR. Stop it
     // while replacing the persistent frame buffer, then play independently of Wi-Fi.
     noInterrupts();
-    matrix.autoscroll(0);
+    if (!shownError) matrix.autoscroll(0);
     interrupts();
     Heartbeat::sequence(heartFrames, heartSpeed);
     noInterrupts();
-    matrix.loadSequence(heartFrames);
-    matrix.play(true);
+    if (!shownError) { matrix.loadSequence(heartFrames); matrix.play(true); }
     interrupts();
     playingHeartSpeed = heartSpeed;
-  } else if (!matrixProgramReady && !localHeart && wasHeart) {
+  } else if (!shownError && !matrixProgramReady && !localHeart && wasHeart) {
     noInterrupts();
     matrix.autoscroll(0);
     interrupts();
@@ -218,11 +280,13 @@ void received(char* topic, byte* payload, unsigned int length) {
       else lcd.noBacklight();
     }
   }
-  if (!localClock && !localLove) {
+  if (sc.isNull()) scroll.stop();
+  else scroll.set(sc["id"], sc["text"], sc["phase"], sc["remaining"], now);
+  if (!localClock && !localLove && brokerConnected) {
     if (!clockTop) row(0, a);
-    row(1, b);
+    if (!scroll.active) row(1, b);
   }
-  if (!matrixProgramReady && !localHeart) {
+  if (!shownError && !matrixProgramReady && !localHeart) {
     for (uint8_t i = 0; i < 96; i++) {
       pixels[i / 12][i % 12] = (hexValue(hex[i / 4]) >> (3 - i % 4)) & 1;
     }
@@ -231,6 +295,7 @@ void received(char* topic, byte* payload, unsigned int length) {
   if (lastFrameAt == 0) Serial.println("First display frame received");
   lastSeq = doc["seq"] | 0UL;
   lastFrameAt = now;
+  fault(6, false); fault(7, false);
 }
 
 void telemetry() {
@@ -238,12 +303,14 @@ void telemetry() {
   doc["online"] = true;
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
-  doc["firmware"] = "1.3.0";
+  doc["firmware"] = "1.4.0";
+  doc["errors"] = errors;
+  doc["occurred"] = occurred;
   doc["matrixRevision"] = matrixRevision;
   doc["seq"] = lastSeq;
-  char buffer[224];
+  char buffer[320];
   serializeJson(doc, buffer, sizeof(buffer));
-  mqtt.publish(STATUS_TOPIC, buffer, false);
+  if (mqtt.publish(STATUS_TOPIC, buffer, false)) { occurred = 0; reportedErrors = errors; }
   Serial.print("Heartbeat; last frame sequence: ");
   Serial.println(lastSeq);
   if (tickMax > 0) {
@@ -315,7 +382,21 @@ void drawClock(int64_t utc, bool offline, bool story) {
 }
 
 void drawLocal(uint32_t now) {
-  if (!synced) return;
+  if (!brokerConnected) {
+    if (lcdReady && !statusLight) { lcd.backlight(); statusLight = true; }
+    centered(0, "(-_-) zZ");
+    centered(1, wifiConnected ? "Broker offline" : "Wi-Fi offline");
+    return;
+  }
+  if (statusLight) {
+    if (lcdReady && !lightOn) lcd.noBacklight();
+    statusLight = false;
+  }
+  if (!synced || !lastFrameAt) {
+    centered(0, "MYSTERY BOX"); centered(1, "Waiting for sync"); return;
+  }
+  char message[17];
+  if (scroll.draw(now, message)) row(1, message);
   const uint64_t timeMs = displayClock.now(now);
   const uint32_t second = timeMs / 1000;
   if (second != lastDrawSecond) {
@@ -337,47 +418,74 @@ void scheduleRetry() {
   retryMs = retryMs < 15000UL ? retryMs * 2 : 30000UL;
 }
 
+void bootStep(const char* step) {
+  Serial.println(step);
+  centered(0, "MYSTERY BOX"); centered(1, step);
+  delay(250); // Startup only: make each hardware stage readable.
+}
+
 void setup() {
   Serial.begin(115200);  // Never wait for USB Serial: run unattended.
+  matrix.begin();
+  matrix.clear();
   Wire.begin();
   lcdReady = lcd.begin(16, 2) == 0;
   if (!lcdReady) Serial.println("LCD not found. Check wiring; run I2CexpDiag.");
   if (lcdReady) lcd.backlight();
-  centered(0, "MYSTERY BOX");
-  centered(1, "Connecting...");
-  RTC.begin();
-  matrix.begin();
-  matrix.clear();
+  fault(1, !lcdReady);
+  bootStep(lcdReady ? "LCD ready" : "LCD error E1");
+  bootStep("Starting RTC");
+  fault(2, !RTC.begin());
+  bootStep((errors & 2) ? "RTC error E2" : "RTC ready");
+  bootStep("LED matrix ready");
+  drawError();
+  bootStep("Configuring MQTT");
 #if MQTT_TLS
+  bootStep("Configuring TLS");
   if (strlen(MQTT_ROOT_CA) > 0) transport.setCACert(MQTT_ROOT_CA);
 #endif
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setCallback(received);
-  if (!mqtt.setBufferSize(1536)) Serial.println("MQTT buffer allocation failed");
+  mqttReady = mqtt.setBufferSize(1536);
+  fault(3, !mqttReady);
+  bootStep(mqttReady ? "MQTT ready" : "MQTT error E3");
   mqtt.setKeepAlive(20);
   mqtt.setSocketTimeout(2);
   WiFi.setTimeout(2000);
+  bootStep("Connecting Wi-Fi");
 }
 
 void loop() {
   const uint32_t now = millis();
+  if (brokerConnected && (!mqtt.connected() || !wifiConnected)) {
+    brokerConnected = false; fault(5, true);
+  }
+  if (brokerConnected) fault(6, now - (lastFrameAt ? lastFrameAt : waitingSince) > 5000UL);
+  drawError();
   if (now - lastLocalDraw >= 20UL) {
     drawLocal(now);
     lastLocalDraw = now;
   }
   if (lastWifiCheck == 0 || now - lastWifiCheck >= 1000UL) {
+    const bool wasConnected = wifiConnected;
     wifiConnected = WiFi.status() == WL_CONNECTED;
+    if (wasConnected && !wifiConnected) fault(4, true);
     lastWifiCheck = now;
   }
   if (!wifiConnected) {
     if (mqtt.connected()) mqtt.disconnect();
+    brokerConnected = false;
     if (due(now, nextAttempt)) {
       Serial.println("Connecting Wi-Fi");
       wifiConnected = WiFi.begin(WIFI_SSID, WIFI_PASSWORD) == WL_CONNECTED;
-      scheduleRetry();
+      fault(4, !wifiConnected);
+      if (wifiConnected) { retryMs = 1000; nextAttempt = millis(); bootStep("Connecting broker"); }
+      else scheduleRetry();
     }
     return;
   }
+  fault(4, false);
+  if (!mqttReady) return;
   if (now - lastMqttPoll < 20UL) return;
   lastMqttPoll = now;
   if (!mqtt.connected()) {
@@ -389,12 +497,18 @@ void loop() {
         Serial.print("Connectivity firmware: ");
         Serial.println(WiFi.firmwareVersion());
         Serial.println(lcdReady ? "LCD ready" : "LCD not found");
-        mqtt.subscribe(FRAME_TOPIC, 0);
-        mqtt.subscribe(MATRIX_TOPIC, 1);
-        mqtt.publish(HELLO_TOPIC, "{}", false);
+        const bool subscribed = mqtt.subscribe(FRAME_TOPIC, 0) && mqtt.subscribe(MATRIX_TOPIC, 1);
+        if (!subscribed || !mqtt.publish(HELLO_TOPIC, "{}", false)) {
+          fault(5, true); mqtt.disconnect(); scheduleRetry(); return;
+        }
+        brokerConnected = true; waitingSince = millis(); lastFrameAt = 0;
+        fault(5, false);
+        bootStep("Broker connected");
+        bootStep("Waiting for sync");
         telemetry();
         retryMs = 1000;
       } else {
+        fault(5, true);
         Serial.print("MQTT connection failed; state: ");
         Serial.println(mqtt.state());
         scheduleRetry();
@@ -404,5 +518,7 @@ void loop() {
   }
   mqtt.loop();
   nextAttempt = millis();  // Keep deadlines fresh even after months of uptime.
-  if (millis() - lastTelemetryAt >= 15000UL) telemetry();
+  const uint32_t sinceTelemetry = millis() - lastTelemetryAt;
+  if (sinceTelemetry >= 15000UL ||
+      (sinceTelemetry >= 1000UL && (errors != reportedErrors || occurred))) telemetry();
 }

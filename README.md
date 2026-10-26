@@ -139,3 +139,10 @@ This is a shared-owner, single-device, single-server application. Run **one app 
 Docker image build, local Compose startup, browser sign-in/message controls, native MQTT frame delivery, topic ACLs, invalid-password rejection, last-will status, TLS certificate acceptance/rejection and Traefik sharing one TLS listener between HTTPS and MQTT were checked locally. The actual UNO/LCD have not been connected here. Local Arduino compilation was blocked by HTTP 403 responses from Arduino’s package download service. A firmware compile job is included in `.github/workflows/ci.yml`; run it or compile in Arduino IDE before uploading.
 
 Version 1.1 adds the shared love clock, equal-owner accounts, permanent note history, the activity journal and the iPhone PWA. See [Our story](docs/our-story.md) for first setup and upgrade details. The automated suite currently has 36 tests; actual iPhone installation and firmware behavior still require the real devices.
+
+
+### LCD scrolling and error codes
+
+Firmware 1.4.0 scrolls long LCD messages on the Arduino, so Wi-Fi packet timing no longer controls each character. Startup progress appears on the LCD. When disconnected, the LCD shows a sleeping character and connection status; the LED matrix takes priority to scroll an error code, then restores your chosen animation after recovery.
+
+Open **Our journal → Error code guide** for E1–E8 meanings and remedies, plus reported error/recovery history. Upload the updated sketch and redeploy the server and broker together (the broker payload limit is now 1280 bytes). See [local scrolling and diagnostics](docs/architecture.md#local-lcd-scrolling-and-diagnostics-firmware-140) for protocol and offline logging details.

@@ -159,6 +159,7 @@ export interface Frame {
   offset: number;
   line1: string;
   line2: string;
+  scroll: { id: string; text: string; phase: number; remaining: number } | null;
   backlight: boolean;
   matrix: string;
   clock: boolean;
@@ -177,6 +178,8 @@ export interface Frame {
   loveOffset: number;
 }
 export interface Device {
+  errors?: number;
+  occurred?: number;
   matrixRevision?: number;
   online: boolean;
   lastSeen: number | null;

@@ -31,7 +31,7 @@ persistence false
 log_dest stdout
 log_type error
 log_type warning
-message_size_limit 1024
+message_size_limit 1280
 max_queued_messages 1
 max_inflight_messages 1
 listener 1883

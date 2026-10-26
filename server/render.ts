@@ -101,6 +101,16 @@ export function render(
     offset: c.offset,
     line1,
     line2,
+    scroll:
+      active &&
+      (s.messaging.mode === "clock" ? active.text.length > 16 : active.text.length > 32)
+        ? {
+            id: active.id,
+            text: active.text,
+            phase: (now - active.startsAt) % ((active.text.length + 4) * 300),
+            remaining: active.expiresAt - now,
+          }
+        : null,
     backlight: s.backlight,
     matrix: matrixFrame(s.matrix, now),
     clock: !active && !love,

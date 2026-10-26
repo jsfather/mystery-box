@@ -1676,3 +1676,19 @@ footer > span {
     margin-left: 7px;
   }
 }
+
+.error-guide {
+  margin: 1.5rem 0;
+}
+.error-guide summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+.error-codes {
+  display: grid;
+  gap: 1rem;
+}
+.error-codes dd {
+  margin: 0.35rem 0 0;
+  line-height: 1.6;
+}

@@ -41,6 +41,8 @@ const client = mqtt.connect(config.MQTT_URL, {
 });
 const telemetry = z.object({
   online: z.boolean(),
+  errors: z.number().int().min(0).max(255).optional(),
+  occurred: z.number().int().min(0).max(255).optional(),
   rssi: z.number().min(-150).max(0).optional(),
   ip: z.string().max(45).optional(),
   firmware: z.string().max(32).optional(),
@@ -91,6 +93,17 @@ client.on("message", (topic, payload, packet) => {
     if (!t.success) return;
     // A retained online status belongs to an old connection and cannot prove liveness.
     if (t.data.online && packet.retain) return;
+    if (t.data.online) {
+      const previous = device.errors ?? 0,
+        current = t.data.errors ?? 0;
+      const raised = (current & ~previous) | (t.data.occurred ?? 0);
+      for (let bit = 0; bit < 8; bit++) {
+        if (raised & (1 << bit))
+          store.audit(null, "device.error", { code: `E${bit + 1}` });
+        if ((previous | raised) & ~current & (1 << bit))
+          store.audit(null, "device.recovered", { code: `E${bit + 1}` });
+      }
+    }
     device = {
       ...device,
       ...t.data,
@@ -112,17 +125,24 @@ function publishMatrix() {
 function publish(force = false) {
   frame = render(settings, messages, Date.now(), (seq = (seq + 1) >>> 0));
   // Clocks and all matrix sequences run on the device. Avoid redundant
-  // frames on its serial Wi-Fi bridge; keep LCD message scrolling at 5fps.
+  // frames on its serial Wi-Fi bridge. New firmware scrolls LCD text locally;
+  // older firmware still receives scrolling positions at 5fps.
   const dynamic =
-    (!frame.clock && !frame.love) ||
+    (!frame.clock && !frame.love && device.firmware !== "1.4.0") ||
     matrixNeedsStream(settings.matrix, device.matrixRevision);
   if (!force && !dynamic && Date.now() - lastPublishedAt < 1000) return;
   lastPublishedAt = Date.now();
   if (client.connected)
-    client.publish(`${base}/frame`, JSON.stringify(frame), {
-      qos: 0,
-      retain: false,
-    });
+    client.publish(
+      `${base}/frame`,
+      JSON.stringify(
+        device.firmware === "1.4.0" ? frame : { ...frame, scroll: undefined },
+      ),
+      {
+        qos: 0,
+        retain: false,
+      },
+    );
 }
 let wasOnline = false;
 store.audit(null, "server.started");
