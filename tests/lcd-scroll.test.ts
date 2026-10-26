@@ -41,6 +41,15 @@ test("Arduino scrolling ignores packet jitter, handles rollover and expires its 
 #include <cstring>
 #include "lcd_scroll.h"
 #include "matrix_program.h"
+uint32_t fakeNow = 0;
+uint32_t millis() { return fakeNow; }
+class FakeTransport {
+public:
+  int checks = 0; bool socketAlive = true;
+  virtual uint8_t connected() { ++checks; return socketAlive; }
+  virtual void stop() { socketAlive = false; }
+};
+#include "polled_transport.h"
 int main() {
   LcdScroll scroll; char row[17];
   scroll.set("one", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0, 5000, 0xfffffff0UL);
@@ -53,6 +62,17 @@ int main() {
   scroll.set("two", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 900, 1000, 5000);
   assert(scroll.draw(5000, row) && !strcmp(row, "DEFGHIJKLMNOPQRS"));
   scroll.stop(); assert(!scroll.draw(5001, row));
+  scroll.set("fast", "ABCDEFGHIJKLMNOPQRSTUVWXYZ", 0, 5000, 0, 200);
+  assert(scroll.untilNext(190) == 10);
+  assert(scroll.draw(200, row) && !strcmp(row, "BCDEFGHIJKLMNOPQ"));
+  PolledTransport<FakeTransport> transport;
+  fakeNow = 0xfffffff0UL; assert(transport.connected());
+  for (int i = 0; i < 100; ++i) assert(transport.connected());
+  assert(transport.checks == 1);
+  fakeNow = 484; transport.socketAlive = false;
+  assert(!transport.connected()); assert(transport.checks == 2);
+  transport.socketAlive = true; assert(transport.connected());
+  transport.stop(); assert(!transport.connected());
   // Error sequences fit the dedicated buffer (with a guard against overflow).
   struct { uint32_t frames[42][4]; uint32_t guard; } out;
   out.guard = 0x12345678;

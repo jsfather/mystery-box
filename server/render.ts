@@ -78,7 +78,7 @@ export function render(
     if (s.messaging.mode === "clock") {
       line1 = center(c.time);
       const text = active.text + "    ";
-      const pos = Math.floor((now - active.startsAt) / 300) % text.length;
+      const pos = Math.floor((now - active.startsAt) / 200) % text.length;
       line2 =
         active.text.length <= 16
           ? center(active.text)
@@ -89,7 +89,7 @@ export function render(
     } else {
       line1 = center("MESSAGE");
       const text = active.text + "    ";
-      const pos = Math.floor((now - active.startsAt) / 300) % text.length;
+      const pos = Math.floor((now - active.startsAt) / 200) % text.length;
       line2 = (text + text).slice(pos, pos + 16).padEnd(16);
     }
   }
@@ -107,8 +107,9 @@ export function render(
         ? {
             id: active.id,
             text: active.text,
-            phase: (now - active.startsAt) % ((active.text.length + 4) * 300),
+            phase: (now - active.startsAt) % ((active.text.length + 4) * 200),
             remaining: active.expiresAt - now,
+            stepMs: 200,
           }
         : null,
     backlight: s.backlight,

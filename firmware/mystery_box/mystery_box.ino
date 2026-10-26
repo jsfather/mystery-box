@@ -17,11 +17,13 @@
 #include "heartbeat.h"
 #include "matrix_program.h"
 #include "lcd_scroll.h"
+#include "snake_game.h"
+#include "polled_transport.h"
 
 #if MQTT_TLS
-WiFiSSLClient transport;
+PolledTransport<WiFiSSLClient> transport;
 #else
-WiFiClient transport;
+PolledTransport<WiFiClient> transport;
 #endif
 PubSubClient mqtt(transport);
 hd44780_I2Cexp lcd;  // Autodetect backpack address and pin mapping.
@@ -29,6 +31,8 @@ ArduinoLEDMatrix matrix;
 const char FRAME_TOPIC[] = "mystery-box/" DEVICE_ID "/frame";
 const char STATUS_TOPIC[] = "mystery-box/" DEVICE_ID "/status";
 const char HELLO_TOPIC[] = "mystery-box/" DEVICE_ID "/hello";
+const char GAME_TOPIC[] = "mystery-box/" DEVICE_ID "/game";
+const char GAME_STATE_TOPIC[] = "mystery-box/" DEVICE_ID "/game/state";
 const char MATRIX_TOPIC[] = "mystery-box/" DEVICE_ID "/matrix";
 uint32_t matrixFrames[512][4], matrixRevision = 0;
 bool matrixProgramReady = false;
@@ -58,6 +62,98 @@ uint16_t programFrames = 0;
 uint32_t errorFrames[42][4]; // Two-character scrolling codes, independent of user animation.
 bool mqttReady = false, brokerConnected = false, statusLight = false;
 uint32_t waitingSince = 0;
+SnakeGame snake;
+char gameId[37] = "";
+uint32_t gameSeq = 0, lastGameCommand = 0, lastGamePublish = 0;
+bool gameDirty = false, gameDrawing = false;
+uint8_t gamePixels[8][12];
+uint32_t maxNetworkMs = 0, reportedMatrixRevision = 0;
+uint32_t lastScrollStep = 0, lastScrollAt = 0, scrollMin = UINT32_MAX, scrollMax = 0;
+
+void restoreMatrix() {
+  noInterrupts(); matrix.autoscroll(0); interrupts();
+  if (matrixProgramReady) {
+    matrix.loadWrapper(matrixFrames, programFrames * sizeof(matrixFrames[0])); matrix.play(true);
+  } else if (localHeart) { matrix.loadSequence(heartFrames); matrix.play(true); }
+  else matrix.renderBitmap(pixels, 8, 12);
+}
+
+void stopGame() {
+  snake.stop(); gameDirty = true; gameDrawing = false;
+  if (!shownError) restoreMatrix();
+}
+
+void serviceGame(uint32_t now) {
+  if (snake.status == SnakeGame::Idle) return;
+  if (uint32_t(now - lastGameCommand) > 8000UL) { stopGame(); return; }
+  if (errors || !brokerConnected || uint32_t(now - lastGameCommand) > 3500UL) {
+    const uint32_t before = snake.revision;
+    snake.pause();
+    if (snake.revision != before) gameDirty = true;
+  }
+  if (snake.tick(now)) gameDirty = true;
+  if (!shownError && (gameDirty || !gameDrawing)) {
+    if (!gameDrawing) { noInterrupts(); matrix.autoscroll(0); interrupts(); }
+    snake.pixels(gamePixels); matrix.renderBitmap(gamePixels, 8, 12); gameDrawing = true;
+  }
+}
+
+void receivedGame(byte* payload, unsigned int length) {
+  if (length > 256) return;
+  JsonDocument doc;
+  if (deserializeJson(doc, payload, length) || (doc["v"] | 0) != 1 || !doc["seq"].is<uint32_t>()) return;
+  const char* id = doc["id"] | "", *action = doc["action"] | "";
+  if (strlen(id) != 36) return;
+  for (uint8_t i = 0; i < 36; ++i) {
+    if (i == 8 || i == 13 || i == 18 || i == 23) { if (id[i] != '-') return; }
+    else if (!((id[i] >= '0' && id[i] <= '9') || (id[i] >= 'a' && id[i] <= 'f'))) return;
+  }
+  const uint32_t seq = doc["seq"].as<uint32_t>(), now = millis();
+  if (!strcmp(action, "start")) {
+    if (errors) return;
+    if (!strcmp(id, gameId)) {
+      // Start retransmission confirms the same game without resetting it.
+      if (seq > gameSeq && snake.status != SnakeGame::Idle) { gameSeq = seq; lastGameCommand = now; gameDirty = true; }
+      return;
+    }
+    strncpy(gameId, id, 37); gameSeq = seq; lastGameCommand = now;
+    snake.start(now, now ^ micros()); gameDirty = true; gameDrawing = false; return;
+  }
+  if (strcmp(id, gameId) || seq <= gameSeq || snake.status == SnakeGame::Idle) return;
+  if (!strcmp(action, "turn")) {
+    if (!doc["direction"].is<uint8_t>() || doc["direction"].as<uint8_t>() > 3) return;
+    snake.turn(doc["direction"].as<uint8_t>());
+  } else if (!strcmp(action, "pause")) snake.pause();
+  else if (!strcmp(action, "resume")) { if (!errors) snake.resume(now); }
+  else if (!strcmp(action, "stop")) stopGame();
+  else if (strcmp(action, "keepalive")) return;
+  gameSeq = seq; lastGameCommand = now; gameDirty = true;
+}
+
+void publishGame(uint32_t now) {
+  if (!gameId[0] || (!gameDirty && now - lastGamePublish < 1000UL)) return;
+  // Coalesce control bursts; keep the serial Wi-Fi bridge free for steering.
+  if (now - lastGamePublish < 80UL) return;
+  snake.pixels(gamePixels);
+  char hex[25];
+  const char digits[] = "0123456789abcdef";
+  for (uint8_t i = 0; i < 24; ++i) {
+    uint8_t value = 0;
+    for (uint8_t bit = 0; bit < 4; ++bit) { const uint8_t at = i * 4 + bit; value = (value << 1) | gamePixels[at / 12][at % 12]; }
+    hex[i] = digits[value];
+  }
+  hex[24] = 0;
+  JsonDocument doc;
+  doc["v"] = 1; doc["id"] = gameId; doc["revision"] = snake.revision;
+  doc["status"] = snake.label(); doc["score"] = snake.score();
+  doc["head"] = snake.head(); doc["food"] = snake.apple(); doc["direction"] = snake.direction();
+  doc["interval"] = snake.interval(); doc["matrix"] = hex;
+  char buffer[300]; serializeJson(doc, buffer, sizeof(buffer));
+  if (mqtt.publish(GAME_STATE_TOPIC, buffer, false)) gameDirty = false;
+  lastGamePublish = now;
+  if (snake.status == SnakeGame::Idle) gameId[0] = 0;
+}
+
 
 void fault(uint8_t code, bool active) {
   const uint8_t bit = 1U << (code - 1);
@@ -80,12 +176,9 @@ void drawError() {
     const uint16_t count = MatrixProgram::build("text", 7, label, nullptr, 0, errorFrames);
     matrix.loadWrapper(errorFrames, count * sizeof(errorFrames[0]));
     matrix.play(true);
-  } else if (matrixProgramReady) {
-    matrix.loadWrapper(matrixFrames, programFrames * sizeof(matrixFrames[0]));
-    matrix.play(true);
-  } else if (localHeart) {
-    matrix.loadSequence(heartFrames); matrix.play(true);
-  } else matrix.renderBitmap(pixels, 8, 12);
+  } else if (snake.status != SnakeGame::Idle) {
+    gameDrawing = false;
+  } else restoreMatrix();
 }
 
 
@@ -168,12 +261,12 @@ void receivedMatrix(byte* payload, unsigned int length) {
   // Stop only while replacing the sequence. Steady playback thereafter is
   // handled entirely by the matrix hardware timer, including during reconnects.
   noInterrupts();
-  if (!shownError) matrix.autoscroll(0);
+  if (!shownError && snake.status == SnakeGame::Idle) matrix.autoscroll(0);
   interrupts();
   const uint16_t frames=MatrixProgram::build(mode,speed,text,custom,count,matrixFrames);
   noInterrupts();
   programFrames = frames;
-  if (!shownError) {
+  if (!shownError && snake.status == SnakeGame::Idle) {
     matrix.loadWrapper(matrixFrames,frames*sizeof(matrixFrames[0]));
     matrix.play(true);
   }
@@ -187,6 +280,7 @@ void receivedMatrix(byte* payload, unsigned int length) {
 }
 
 void received(char* topic, byte* payload, unsigned int length) {
+  if(!strcmp(topic,GAME_TOPIC)) { receivedGame(payload,length); return; }
   if(!strcmp(topic,MATRIX_TOPIC)) { receivedMatrix(payload,length); return; }
   if (strcmp(topic, FRAME_TOPIC) != 0) return;
   if (length > 1280) { fault(7, true); return; }
@@ -207,7 +301,8 @@ void received(char* topic, byte* payload, unsigned int length) {
     const char* text = sc["text"] | "";
     if (!*key || strlen(key) > 80 || !*text || strlen(text) > 160 ||
         !sc["phase"].is<uint32_t>() || !sc["remaining"].is<uint32_t>() ||
-        sc["phase"].as<uint32_t>() >= (strlen(text) + 4) * 300UL ||
+        ((sc["stepMs"] | 300) != 200 && (sc["stepMs"] | 300) != 300) ||
+        sc["phase"].as<uint32_t>() >= (strlen(text) + 4) * uint32_t(sc["stepMs"] | 300) ||
         sc["remaining"].as<uint32_t>() > 300000UL) { fault(7, true); return; }
     for (size_t i = 0; text[i]; ++i) if (text[i] < 32 || text[i] > 126) { fault(7, true); return; }
   }
@@ -256,14 +351,14 @@ void received(char* topic, byte* payload, unsigned int length) {
     // The LED library advances sequences in its hardware timer ISR. Stop it
     // while replacing the persistent frame buffer, then play independently of Wi-Fi.
     noInterrupts();
-    if (!shownError) matrix.autoscroll(0);
+    if (!shownError && snake.status == SnakeGame::Idle) matrix.autoscroll(0);
     interrupts();
     Heartbeat::sequence(heartFrames, heartSpeed);
     noInterrupts();
-    if (!shownError) { matrix.loadSequence(heartFrames); matrix.play(true); }
+    if (!shownError && snake.status == SnakeGame::Idle) { matrix.loadSequence(heartFrames); matrix.play(true); }
     interrupts();
     playingHeartSpeed = heartSpeed;
-  } else if (!shownError && !matrixProgramReady && !localHeart && wasHeart) {
+  } else if (!shownError && snake.status == SnakeGame::Idle && !matrixProgramReady && !localHeart && wasHeart) {
     noInterrupts();
     matrix.autoscroll(0);
     interrupts();
@@ -281,18 +376,21 @@ void received(char* topic, byte* payload, unsigned int length) {
     }
   }
   if (sc.isNull()) scroll.stop();
-  else scroll.set(sc["id"], sc["text"], sc["phase"], sc["remaining"], now);
+  else scroll.set(sc["id"], sc["text"], sc["phase"], sc["remaining"], now, sc["stepMs"] | 300);
   if (!localClock && !localLove && brokerConnected) {
     if (!clockTop) row(0, a);
     if (!scroll.active) row(1, b);
   }
-  if (!shownError && !matrixProgramReady && !localHeart) {
+  if (!shownError && snake.status == SnakeGame::Idle && !matrixProgramReady && !localHeart) {
     for (uint8_t i = 0; i < 96; i++) {
       pixels[i / 12][i % 12] = (hexValue(hex[i / 4]) >> (3 - i % 4)) & 1;
     }
     matrix.renderBitmap(pixels, 8, 12);
   }
-  if (lastFrameAt == 0) Serial.println("First display frame received");
+  if (lastFrameAt == 0) {
+    Serial.println("First display frame received");
+    Serial.println(doc["scroll"].isUnbound() ? "Legacy server: deploy update to enable local scrolling and Snake" : "Local scrolling protocol available");
+  }
   lastSeq = doc["seq"] | 0UL;
   lastFrameAt = now;
   fault(6, false); fault(7, false);
@@ -303,14 +401,15 @@ void telemetry() {
   doc["online"] = true;
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
-  doc["firmware"] = "1.4.0";
+  doc["firmware"] = "1.5.0";
+  doc["lcdScroll"] = true; doc["snake"] = true;
   doc["errors"] = errors;
   doc["occurred"] = occurred;
   doc["matrixRevision"] = matrixRevision;
   doc["seq"] = lastSeq;
   char buffer[320];
   serializeJson(doc, buffer, sizeof(buffer));
-  if (mqtt.publish(STATUS_TOPIC, buffer, false)) { occurred = 0; reportedErrors = errors; }
+  if (mqtt.publish(STATUS_TOPIC, buffer, false)) { occurred = 0; reportedErrors = errors; reportedMatrixRevision = matrixRevision; }
   Serial.print("Heartbeat; last frame sequence: ");
   Serial.println(lastSeq);
   if (tickMax > 0) {
@@ -321,6 +420,8 @@ void telemetry() {
     tickMin = UINT32_MAX;
     tickMax = 0;
   }
+  Serial.print("Max network poll (ms): "); Serial.println(maxNetworkMs); maxNetworkMs = 0;
+  if (scrollMax) { Serial.print("LCD scroll intervals (ms): "); Serial.print(scrollMin); Serial.print(" - "); Serial.println(scrollMax); scrollMin = UINT32_MAX; scrollMax = 0; }
   lastTelemetryAt = millis();
 }
 
@@ -396,7 +497,16 @@ void drawLocal(uint32_t now) {
     centered(0, "MYSTERY BOX"); centered(1, "Waiting for sync"); return;
   }
   char message[17];
-  if (scroll.draw(now, message)) row(1, message);
+  if (scroll.draw(now, message)) {
+    if (memcmp(displayed[1], message, 16)) {
+      if (lastScrollAt && now - lastScrollAt < 1000UL) {
+        const uint32_t interval = now - lastScrollAt;
+        if (interval < scrollMin) scrollMin = interval;
+        if (interval > scrollMax) scrollMax = interval;
+      }
+      lastScrollAt = now; row(1, message);
+    }
+  } else lastScrollAt = 0;
   const uint64_t timeMs = displayClock.now(now);
   const uint32_t second = timeMs / 1000;
   if (second != lastDrawSecond) {
@@ -408,7 +518,7 @@ void drawLocal(uint32_t now) {
     lastTickAt = now;
     lastDrawSecond = second;
   }
-  const bool offline = now - lastFrameAt > 3000UL;
+  const bool offline = now - lastFrameAt > 30000UL;
   if (localClock || localLove || clockTop || offline)
     drawClock(timeMs / 1000, offline, offline ? loveEnabled : localLove);
 }
@@ -426,6 +536,7 @@ void bootStep(const char* step) {
 
 void setup() {
   Serial.begin(115200);  // Never wait for USB Serial: run unattended.
+  Serial.println("Mystery Box firmware 1.5.0");
   matrix.begin();
   matrix.clear();
   Wire.begin();
@@ -457,11 +568,10 @@ void setup() {
 
 void loop() {
   const uint32_t now = millis();
-  if (brokerConnected && (!mqtt.connected() || !wifiConnected)) {
-    brokerConnected = false; fault(5, true);
-  }
-  if (brokerConnected) fault(6, now - (lastFrameAt ? lastFrameAt : waitingSince) > 5000UL);
+
+  if (brokerConnected) fault(6, now - (lastFrameAt ? lastFrameAt : waitingSince) > 30000UL);
   drawError();
+  serviceGame(now);
   if (now - lastLocalDraw >= 20UL) {
     drawLocal(now);
     lastLocalDraw = now;
@@ -473,7 +583,7 @@ void loop() {
     lastWifiCheck = now;
   }
   if (!wifiConnected) {
-    if (mqtt.connected()) mqtt.disconnect();
+    if (brokerConnected) mqtt.disconnect();
     brokerConnected = false;
     if (due(now, nextAttempt)) {
       Serial.println("Connecting Wi-Fi");
@@ -486,9 +596,12 @@ void loop() {
   }
   fault(4, false);
   if (!mqttReady) return;
-  if (now - lastMqttPoll < 20UL) return;
+  // WiFiS3 connected()/available() are serial modem transactions, not cheap reads.
+  // Leave a quiet window before the next LCD step; do not hammer the coprocessor.
+  if (scroll.untilNext(now) < 35UL) return;
+  if (now - lastMqttPoll < 25UL) return;
   lastMqttPoll = now;
-  if (!mqtt.connected()) {
+  if (!brokerConnected) {
     if (due(now, nextAttempt)) {
       Serial.println("Connecting MQTT");
       if (mqtt.connect("mb-" DEVICE_ID, MQTT_USERNAME, MQTT_PASSWORD,
@@ -497,7 +610,7 @@ void loop() {
         Serial.print("Connectivity firmware: ");
         Serial.println(WiFi.firmwareVersion());
         Serial.println(lcdReady ? "LCD ready" : "LCD not found");
-        const bool subscribed = mqtt.subscribe(FRAME_TOPIC, 0) && mqtt.subscribe(MATRIX_TOPIC, 1);
+        const bool subscribed = mqtt.subscribe(FRAME_TOPIC, 0) && mqtt.subscribe(MATRIX_TOPIC, 1) && mqtt.subscribe(GAME_TOPIC, 0);
         if (!subscribed || !mqtt.publish(HELLO_TOPIC, "{}", false)) {
           fault(5, true); mqtt.disconnect(); scheduleRetry(); return;
         }
@@ -516,9 +629,17 @@ void loop() {
     }
     return;
   }
-  mqtt.loop();
+  const uint32_t networkStarted = millis();
+  if (!mqtt.loop()) { brokerConnected = false; fault(5, true); }
+  const uint32_t networkMs = millis() - networkStarted;
+  if (networkMs > maxNetworkMs) maxNetworkMs = networkMs;
+  // Service local tasks between network operations, rather than stacking delays.
+  const uint32_t afterNetwork = millis();
+  serviceGame(afterNetwork);
+  if (afterNetwork - lastLocalDraw >= 10UL) { drawLocal(afterNetwork); lastLocalDraw = afterNetwork; }
+  if (brokerConnected) publishGame(millis());
   nextAttempt = millis();  // Keep deadlines fresh even after months of uptime.
   const uint32_t sinceTelemetry = millis() - lastTelemetryAt;
   if (sinceTelemetry >= 15000UL ||
-      (sinceTelemetry >= 1000UL && (errors != reportedErrors || occurred))) telemetry();
+      (sinceTelemetry >= 1000UL && (errors != reportedErrors || occurred || matrixRevision != reportedMatrixRevision))) telemetry();
 }

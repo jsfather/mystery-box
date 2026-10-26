@@ -15,11 +15,15 @@ cat > /mosquitto/generated/acl <<ACL
 user server
 topic write mystery-box/$DEVICE_ID/frame
 topic write mystery-box/$DEVICE_ID/matrix
+topic write mystery-box/$DEVICE_ID/game
+topic read mystery-box/$DEVICE_ID/game/state
 topic read mystery-box/$DEVICE_ID/status
 topic read mystery-box/$DEVICE_ID/hello
 user device
 topic read mystery-box/$DEVICE_ID/frame
 topic read mystery-box/$DEVICE_ID/matrix
+topic read mystery-box/$DEVICE_ID/game
+topic write mystery-box/$DEVICE_ID/game/state
 topic write mystery-box/$DEVICE_ID/status
 topic write mystery-box/$DEVICE_ID/hello
 ACL

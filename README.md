@@ -143,6 +143,15 @@ Version 1.1 adds the shared love clock, equal-owner accounts, permanent note his
 
 ### LCD scrolling and error codes
 
-Firmware 1.4.0 scrolls long LCD messages on the Arduino, so Wi-Fi packet timing no longer controls each character. Startup progress appears on the LCD. When disconnected, the LCD shows a sleeping character and connection status; the LED matrix takes priority to scroll an error code, then restores your chosen animation after recovery.
+Firmware 1.5.0 scrolls long LCD messages on the Arduino, so Wi-Fi packet timing no longer controls each character. Startup progress appears on the LCD. When disconnected, the LCD shows a sleeping character and connection status; the LED matrix takes priority to scroll an error code, then restores your chosen animation after recovery.
 
-Open **Our journal → Error code guide** for E1–E8 meanings and remedies, plus reported error/recovery history. Upload the updated sketch and redeploy the server and broker together (the broker payload limit is now 1280 bytes). See [local scrolling and diagnostics](docs/architecture.md#local-lcd-scrolling-and-diagnostics-firmware-140) for protocol and offline logging details.
+Open **Our journal → Error code guide** for E1–E8 meanings and remedies, plus reported error/recovery history. Upload the updated sketch and **manually redeploy both the app and broker** together (the broker payload limit is now 1280 bytes). See [local scrolling and diagnostics](docs/architecture.md#local-lcd-scrolling-and-diagnostics-firmware-140) for protocol and offline logging details.
+
+
+### Play Snake on the real LED matrix
+
+Deploy the matching app and broker, then open **Play Snake** and select **Start game**. Use laptop arrow keys or the four phone direction buttons. Space toggles pause/resume; **End game** restores your saved LED animation. The game runs on the Arduino's 12×8 matrix; the browser mirrors its confirmed state. Eat snacks, avoid walls and your body, and fill all 96 cells to win. Speed increases with your score.
+
+One browser controls a game at a time. Other signed-in users can watch. Controls pause when the page loses focus, and the board pauses on a lost connection. Leaving the page ends the game; if that request is lost, ownership expires after eight seconds. Errors keep priority on the matrix. No new credentials or dependencies are needed. Firmware 1.5.0 is required; the existing “Neon snake” studio preset remains an animation.
+
+**Deploy both services:** the broker now authorizes `mystery-box/<device>/game` commands and `.../game/state` responses. Deploying only the frontend/app will leave Snake waiting for a board response. The firmware startup log explicitly identifies a legacy server that still streams scrolling positions. Smooth local scrolling requires the server update as well as the uploaded firmware.

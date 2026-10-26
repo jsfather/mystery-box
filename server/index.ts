@@ -6,6 +6,7 @@ import { createApp } from "./app.js";
 import { z } from "zod";
 import type { Device, Snapshot } from "../shared/model.js";
 import { matrixProgram, matrixNeedsStream } from "../shared/matrix.js";
+import { SnakeController } from "./snake.js";
 let config;
 try {
   config = readConfig();
@@ -39,8 +40,23 @@ const client = mqtt.connect(config.MQTT_URL, {
   queueQoSZero: false,
   resubscribe: true,
 });
+const game = new SnakeController(
+  (command) => {
+    if (!client.connected) return false;
+    client.publish(`${base}/game`, JSON.stringify(command), { qos: 0, retain: false });
+    return true;
+  },
+  () =>
+    broker &&
+    device.online &&
+    device.snake === true &&
+    Date.now() - (device.lastSeen ?? 0) < 45000,
+  () => (device.errors ?? 0) === 0,
+);
 const telemetry = z.object({
   online: z.boolean(),
+  lcdScroll: z.boolean().optional(),
+  snake: z.boolean().optional(),
   errors: z.number().int().min(0).max(255).optional(),
   occurred: z.number().int().min(0).max(255).optional(),
   rssi: z.number().min(-150).max(0).optional(),
@@ -52,7 +68,7 @@ const telemetry = z.object({
 client.on("connect", () => {
   broker = true;
   store.audit(null, "broker.connected");
-  client.subscribe([`${base}/status`, `${base}/hello`], { qos: 1 });
+  client.subscribe([`${base}/status`, `${base}/hello`, `${base}/game/state`], { qos: 1 });
   console.log("MQTT connected");
   publishMatrix();
 });
@@ -60,11 +76,13 @@ client.on("offline", () => {
   if (broker) store.audit(null, "broker.disconnected");
   broker = false;
   device.online = false;
+  game.release();
 });
 client.on("close", () => {
   if (broker) store.audit(null, "broker.disconnected");
   broker = false;
   device.online = false;
+  game.release();
 });
 let lastBrokerErrorAt = 0;
 client.on("error", () => {
@@ -85,6 +103,17 @@ client.on("message", (topic, payload, packet) => {
     if (!packet.retain && client.connected) {
       publishMatrix();
       publish(true);
+    }
+    return;
+  }
+  if (topic === `${base}/game/state`) {
+    if (!packet.retain) {
+      try {
+        if (game.receive(JSON.parse(payload.toString())))
+          for (const fn of listeners) fn();
+      } catch {
+        /* Ignore invalid state. */
+      }
     }
     return;
   }
@@ -114,7 +143,8 @@ client.on("message", (topic, payload, packet) => {
     /* Ignore invalid device telemetry. */
   }
 });
-let lastPublishedAt = 0;
+let lastPublishedAt = 0,
+  lastDisplaySignature = "";
 function publishMatrix() {
   if (client.connected)
     client.publish(`${base}/matrix`, JSON.stringify(matrixProgram(settings.matrix)), {
@@ -124,25 +154,48 @@ function publishMatrix() {
 }
 function publish(force = false) {
   frame = render(settings, messages, Date.now(), (seq = (seq + 1) >>> 0));
-  // Clocks and all matrix sequences run on the device. Avoid redundant
-  // frames on its serial Wi-Fi bridge. New firmware scrolls LCD text locally;
-  // older firmware still receives scrolling positions at 5fps.
+  const modern = device.lcdScroll === true;
+  const signature = JSON.stringify([
+    frame.clock,
+    frame.love,
+    frame.clockTop,
+    frame.scroll?.id,
+    frame.clock || frame.love || frame.clockTop ? "" : frame.line1,
+    frame.clock || frame.love || frame.scroll ? "" : frame.line2,
+    frame.dateKey,
+    frame.offset,
+  ]);
+  const changed = signature !== lastDisplaySignature;
+  const legacyScroll =
+    !frame.clock && !frame.love && !modern && device.firmware !== "1.4.0";
   const dynamic =
-    (!frame.clock && !frame.love && device.firmware !== "1.4.0") ||
-    matrixNeedsStream(settings.matrix, device.matrixRevision);
-  if (!force && !dynamic && Date.now() - lastPublishedAt < 1000) return;
+    legacyScroll || matrixNeedsStream(settings.matrix, device.matrixRevision);
+  if (
+    !force &&
+    !changed &&
+    !dynamic &&
+    Date.now() - lastPublishedAt < (modern ? 10000 : 1000)
+  )
+    return;
   lastPublishedAt = Date.now();
-  if (client.connected)
-    client.publish(
-      `${base}/frame`,
-      JSON.stringify(
-        device.firmware === "1.4.0" ? frame : { ...frame, scroll: undefined },
-      ),
-      {
-        qos: 0,
-        retain: false,
+  lastDisplaySignature = signature;
+  let packet = frame;
+  if (!modern && device.firmware !== "1.4.0") packet = { ...frame, scroll: null };
+  else if (!modern && frame.scroll) {
+    const message = messages.find((m) => m.id === frame.scroll!.id);
+    packet = {
+      ...frame,
+      scroll: {
+        ...frame.scroll,
+        stepMs: 300,
+        phase: message
+          ? (Date.now() - message.startsAt) % ((message.text.length + 4) * 300)
+          : 0,
       },
-    );
+    };
+  }
+  if (client.connected)
+    client.publish(`${base}/frame`, JSON.stringify(packet), { qos: 0, retain: false });
 }
 let wasOnline = false;
 store.audit(null, "server.started");
@@ -152,10 +205,12 @@ const timer = setInterval(() => {
     store.audit(null, online ? "device.online" : "device.offline");
     wasOnline = online;
   }
+  game.tick();
   publish();
   for (const fn of listeners) fn();
 }, 200);
 const snapshot = (): Snapshot => ({
+  snake: game.snapshot(),
   settings,
   frame,
   device: {
@@ -171,6 +226,11 @@ const snapshot = (): Snapshot => ({
 });
 const app = createApp(config, store, {
   snapshot,
+  snake: (request, user) => {
+    const result = game.request(request, user);
+    for (const fn of listeners) fn();
+    return result;
+  },
   changed: () => {
     const previousMatrix = JSON.stringify(settings.matrix);
     settings = store.settings();
@@ -188,6 +248,7 @@ const server = app.listen(config.PORT, "0.0.0.0", () =>
   console.log(`Mystery Box listening at http://localhost:${config.PORT}`),
 );
 function shutdown() {
+  game.release();
   clearInterval(timer);
   server.close();
   server.closeAllConnections();

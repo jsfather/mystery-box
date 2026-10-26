@@ -33,7 +33,7 @@ export const deviceErrors = [
     code: "E6",
     meaning: "Display updates have stopped",
     remedy:
-      "No valid display frame for five seconds. Check that the server is running and uses the same device ID. Local time continues.",
+      "No valid display frame for thirty seconds (five seconds on firmware 1.4.0). Check that the server is running and uses the same device ID. Local time continues.",
   },
   {
     code: "E7",

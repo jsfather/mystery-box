@@ -1,0 +1,179 @@
+.snake-card {
+  max-width: 760px;
+  margin-inline: auto;
+}
+.snake-score {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 24px 0 18px;
+}
+.snake-score span {
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+}
+.snake-score strong {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 1.8rem;
+}
+.snake-stage {
+  background: #12251c;
+  border: 8px solid #304637;
+  border-radius: 22px;
+  padding: clamp(14px, 4vw, 32px);
+  outline-offset: 5px;
+}
+.snake-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: clamp(3px, 1vw, 8px);
+  aspect-ratio: 12 / 8;
+}
+.snake-grid i {
+  border-radius: 30%;
+  background: #1d3528;
+}
+.snake-grid i.on {
+  background: #98e59f;
+  box-shadow: 0 0 8px #98e59f33;
+}
+.snake-grid i.snake-head {
+  background: #e5ffd3;
+}
+.snake-grid i.snake-food {
+  background: #ffb87b;
+  border-radius: 50%;
+  box-shadow: 0 0 12px #ffb87b66;
+}
+.snake-status {
+  text-align: center;
+  min-height: 1.5em;
+  margin: 20px 0;
+  font-weight: 600;
+}
+.snake-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.snake-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 64px);
+  grid-template-rows: repeat(2, 64px);
+  justify-content: center;
+  gap: 8px;
+  margin: 28px auto;
+}
+.snake-pad button {
+  display: grid;
+  place-items: center;
+  min-height: 64px;
+  border-radius: 18px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.snake-pad button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+.snake-pad .snake-up {
+  grid-column: 2;
+  grid-row: 1;
+}
+.snake-pad .snake-left {
+  grid-column: 1;
+  grid-row: 2;
+}
+.snake-pad .snake-down {
+  grid-column: 2;
+  grid-row: 2;
+}
+.snake-pad .snake-right {
+  grid-column: 3;
+  grid-row: 2;
+}
+@media (prefers-reduced-motion: reduce) {
+  .snake-pad button:active {
+    transform: none;
+  }
+}
+
+.snake-arena {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 24px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.snake-stage {
+  padding: 16px;
+  border-width: 6px;
+}
+.snake-score span {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.snake-score strong {
+  font-size: 1.5rem;
+}
+.snake-pad {
+  grid-template-columns: repeat(3, 56px);
+  grid-template-rows: repeat(2, 56px);
+  gap: 6px;
+  margin: 20px auto 0;
+}
+.snake-pad button {
+  min-height: 56px;
+}
+.snake-status {
+  margin-top: 0;
+}
+@media (max-width: 800px) {
+  .snake-arena {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .snake-stage {
+    width: min(100%, 390px);
+    justify-self: center;
+  }
+  .snake-card {
+    padding: 20px;
+  }
+  .snake-status {
+    margin: 0 0 12px;
+  }
+  .snake-pad {
+    margin-top: 16px;
+  }
+}
+
+@media (max-width: 800px) {
+  .snake-page .page-heading {
+    margin-bottom: 18px;
+  }
+  .snake-page .page-heading .eyebrow,
+  .snake-page .page-heading p {
+    display: none;
+  }
+  .snake-page .page-heading h1 {
+    font-size: 24px;
+    margin-bottom: 0;
+  }
+  .snake-card .card-title {
+    margin-bottom: 14px;
+  }
+  .snake-card .snake-rules {
+    margin-bottom: 0;
+    font-size: 12px;
+  }
+  .snake-score {
+    margin: 14px 0;
+  }
+  .snake-stage {
+    scroll-margin-top: 156px;
+  }
+}

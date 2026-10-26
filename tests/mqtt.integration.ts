@@ -57,6 +57,9 @@ async function until<T>(
 }
 let latest: Frame | undefined,
   forged = false;
+let gameCommand:
+  { id: string; action: string; direction?: number; seq: number } | undefined;
+let gameRetained = false;
 let program: ReturnType<typeof matrixProgram> | undefined;
 const device = await mqtt.connectAsync(broker, {
   username: "device",
@@ -71,8 +74,13 @@ const device = await mqtt.connectAsync(broker, {
   },
 });
 try {
-  device.on("message", (topic, buffer) => {
+  device.on("message", (topic, buffer, packet) => {
     const parsed = JSON.parse(buffer.toString());
+    if (topic === `${base}/game`) {
+      gameCommand = parsed;
+      gameRetained = packet.retain;
+      return;
+    }
     if (topic === `${base}/matrix`) {
       program = parsed;
       return;
@@ -80,7 +88,7 @@ try {
     if (parsed.unauthorized) forged = true;
     else latest = parsed;
   });
-  await device.subscribeAsync([`${base}/frame`, `${base}/matrix`]);
+  await device.subscribeAsync([`${base}/frame`, `${base}/matrix`, `${base}/game`]);
   await device.publishAsync(`${base}/hello`, "{}");
   await until(
     async () => latest,
@@ -187,6 +195,69 @@ try {
     (f) => !!f && f.love && f.loveFormat === 1 && /\d+s\s*$/.test(f.line2),
   );
   console.log("PASS total-seconds counter and offline format reach MQTT device");
+  // Verify the complete control path against the real broker and its ACLs.
+  await device.publishAsync(
+    `${base}/status`,
+    JSON.stringify({
+      online: true,
+      firmware: "1.5.0",
+      snake: true,
+      lcdScroll: true,
+      errors: 0,
+      matrixRevision: program!.revision,
+    }),
+  );
+  await until(
+    () => api("state"),
+    (s) => s.device.snake === true,
+  );
+  const started = await api("snake", "POST", { action: "start" });
+  await until(
+    async () => gameCommand,
+    (c) => c?.action === "start",
+  );
+  assert.equal(gameRetained, false);
+  const gameId = gameCommand!.id;
+  await device.publishAsync(
+    `${base}/game/state`,
+    JSON.stringify({
+      v: 1,
+      id: gameId,
+      revision: 1,
+      status: "playing",
+      score: 0,
+      head: 40,
+      food: 12,
+      direction: 1,
+      interval: 280,
+      matrix: "0".repeat(24),
+    }),
+  );
+  await until(
+    () => api("state"),
+    (s) => s.snake?.state?.id === gameId,
+  );
+  const watched = await api("state");
+  assert.equal(JSON.stringify(watched.snake).includes(started.token), false);
+  await api("snake", "POST", { action: "turn", token: started.token, direction: "up" });
+  await until(
+    async () => gameCommand,
+    (c) => c?.action === "turn" && c.direction === 0,
+  );
+  const turnSequence = gameCommand!.seq;
+  await api("snake", "POST", { action: "stop", token: started.token });
+  await until(
+    async () => gameCommand,
+    (c) => c?.action === "stop",
+  );
+  assert.ok(gameCommand!.seq > turnSequence);
+  assert.equal((await api("state")).snake, null);
+  const stoppedSequence = gameCommand!.seq;
+  await device.publishAsync(`${base}/game`, JSON.stringify({ unauthorized: true }));
+  await pause(300);
+  assert.equal(gameCommand!.seq, stoppedSequence);
+  console.log("PASS Snake start/state/steering/stop and dedicated topic ACLs");
+
   await device.publishAsync(`${base}/frame`, JSON.stringify({ unauthorized: true }), {
     qos: 0,
   });

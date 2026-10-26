@@ -11,7 +11,10 @@ import {
   usernameSchema,
   type Snapshot,
 } from "../shared/model.js";
+import { snakeRequestSchema, type SnakeRequest } from "../shared/snake.js";
+import { GameError } from "./snake.js";
 interface Runtime {
+  snake?: (request: SnakeRequest, user: { id: string; name: string }) => unknown;
   snapshot: () => Snapshot;
   changed: () => void;
   listen: (fn: () => void) => () => void;
@@ -141,6 +144,24 @@ export function createApp(config: Config, store: Store, runtime: Runtime) {
         sameSite: "strict",
       })
       .json({ ok: true });
+  });
+  app.post("/api/snake", auth, (req, res) => {
+    const parsed = snakeRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: "Invalid game command" });
+      return;
+    }
+    if (!runtime.snake) {
+      res.status(503).json({ error: "Game controls are unavailable" });
+      return;
+    }
+    try {
+      res.json(runtime.snake(parsed.data, res.locals.user));
+    } catch (error) {
+      if (error instanceof GameError)
+        res.status(error.status).json({ error: error.message });
+      else throw error;
+    }
   });
   app.get("/api/state", auth, (_req, res) => res.json(runtime.snapshot()));
   app.put("/api/settings", auth, (req, res) => {

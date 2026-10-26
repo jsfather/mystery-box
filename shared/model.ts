@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { SnakeSnapshot } from "./snake.js";
 import { matrixModes } from "./matrix.js";
 export const printable = z
   .string()
@@ -159,7 +160,13 @@ export interface Frame {
   offset: number;
   line1: string;
   line2: string;
-  scroll: { id: string; text: string; phase: number; remaining: number } | null;
+  scroll: {
+    id: string;
+    text: string;
+    phase: number;
+    remaining: number;
+    stepMs: number;
+  } | null;
   backlight: boolean;
   matrix: string;
   clock: boolean;
@@ -178,6 +185,8 @@ export interface Frame {
   loveOffset: number;
 }
 export interface Device {
+  lcdScroll?: boolean;
+  snake?: boolean;
   errors?: number;
   occurred?: number;
   matrixRevision?: number;
@@ -189,6 +198,7 @@ export interface Device {
   seq: number | null;
 }
 export interface Snapshot {
+  snake?: SnakeSnapshot | null;
   settings: Settings;
   frame: Frame;
   device: Device;
