@@ -638,7 +638,9 @@ function App() {
               {page === "preferences" && (
                 <Preferences snapshot={s} save={save} notice={notice} />
               )}
-              {page === "games" && me && <GamesPage snapshot={s} me={me} live={live} save={save} />}
+              {page === "games" && me && (
+                <GamesPage snapshot={s} me={me} live={live} save={save} />
+              )}
               {page === "matrix" && (
                 <MatrixStudio
                   settings={s.settings}

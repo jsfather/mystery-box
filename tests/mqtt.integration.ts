@@ -226,7 +226,8 @@ try {
     `${base}/status`,
     JSON.stringify({
       online: true,
-      firmware: "1.5.0",
+      firmware: "1.8.0",
+      arcade: true,
       snake: true,
       lcdScroll: true,
       errors: 0,
@@ -254,7 +255,8 @@ try {
     `${base}/status`,
     JSON.stringify({
       online: true,
-      firmware: "1.7.0",
+      firmware: "1.8.0",
+      arcade: true,
       snake: true,
       lcdScroll: true,
       scrollSpeed: true,
@@ -296,7 +298,7 @@ try {
       head: 40,
       food: 12,
       direction: 1,
-      interval: 280,
+      interval: 350,
       matrix: "0".repeat(24),
     }),
   );
@@ -324,6 +326,51 @@ try {
   await pause(300);
   assert.equal(gameCommand!.seq, stoppedSequence);
   console.log("PASS Snake start/state/steering/stop and dedicated topic ACLs");
+  await api("settings", "PUT", {
+    ...defaults,
+    games: { snake: { moveMs: 500 }, tetris: { fallMs: 1200 } },
+  });
+  const blocks = await api("games", "POST", { action: "start", game: "tetris" });
+  await until(
+    async () => gameCommand,
+    (command) => !!command && command.id === blocks.game.id && command.action === "start",
+  );
+  assert.equal((gameCommand as any).kind, "tetris");
+  assert.equal((gameCommand as any).interval, 1200);
+  await device.publishAsync(
+    `${base}/game/state`,
+    JSON.stringify({
+      v: 1,
+      id: blocks.game.id,
+      kind: "tetris",
+      revision: 1,
+      status: "ready",
+      score: 0,
+      lines: 0,
+      interval: 1200,
+      matrix: "0".repeat(24),
+      active: "0".repeat(24),
+    }),
+  );
+  await until(
+    () => api("state"),
+    (snapshot) => snapshot.snake?.state?.status === "ready",
+  );
+  await api("games", "POST", { action: "drop", token: blocks.token });
+  await until(
+    async () => gameCommand,
+    (command) => command?.action === "drop",
+  );
+  await api("settings", "PUT", {
+    ...defaults,
+    games: { snake: { moveMs: 500 }, tetris: { fallMs: 700 } },
+  });
+  await until(
+    async () => gameCommand,
+    (command) => command?.action === "configure" && (command as any).interval === 700,
+  );
+  await api("games", "POST", { action: "stop", token: blocks.token });
+  console.log("PASS Tetris preparation, drop and independent saved game speeds");
 
   await device.publishAsync(`${base}/frame`, JSON.stringify({ unauthorized: true }), {
     qos: 0,

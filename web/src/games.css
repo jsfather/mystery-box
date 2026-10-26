@@ -1,21 +1,130 @@
-.game-picker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
-.game-picker button { display: grid; grid-template-columns: 30px 1fr; gap: 4px 10px; align-items: center; text-align: left; padding: 18px; border: 1px solid var(--border); border-radius: 16px; background: var(--surface); color: var(--ink); }
-.game-picker button[aria-pressed=true] { background: var(--accent-soft); border-color: var(--green); }
-.game-picker button > span { grid-row: span 2; color: var(--muted); font-size: 12px; }
-.game-picker strong { font-size: 16px; }
-.game-picker small { color: var(--muted); font-size: 11px; line-height: 1.5; }
-.games-layout { display: grid; grid-template-columns: minmax(0,1fr) 280px; gap: 22px; align-items: start; }
-.games-layout .snake-card { width: 100%; max-width: none; }
-.games-layout .snake-arena { grid-template-columns: minmax(0,1fr); }
-.games-layout .snake-controls { display: grid; justify-items: center; }
-.games-layout .snake-stage { width: min(100%, 440px); justify-self: center; }
-.snake-grid i.tetris-active { background: #ffce8a; box-shadow: 0 0 8px #ffce8a44; }
-.game-settings output { display: block; color: var(--muted); font-size: 12px; margin-top: 7px; }
-.game-settings input[type=range] { padding-inline: 0; width: 100%; accent-color: var(--green); }
-.game-speed-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
-.game-settings > button { width: 100%; margin-top: 18px; }
-.game-rules { margin-top: 24px; border-top: 1px solid var(--border); padding-top: 18px; }
-.game-rules p { color: var(--muted); font-size: 12px; line-height: 1.7; margin-top: 8px; }
-.hard-drop { margin-top: 14px; min-height: 44px; width: 180px; justify-content: center; }
-@media (max-width:1100px) { .games-layout { grid-template-columns: minmax(0,1fr); } .game-settings { max-width: 760px; width: 100%; margin: auto; } .games-layout .snake-arena { grid-template-columns: minmax(0,1fr) 210px; } }
-@media (max-width:800px) { .games-layout .snake-arena { grid-template-columns: minmax(0,1fr); } .game-picker { gap: 10px; } .game-picker button { padding: 13px; grid-template-columns: 1fr; } .game-picker button > span { display: none; } .game-picker strong { font-size: 14px; } }
+.game-picker {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.game-picker button {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 4px 10px;
+  align-items: center;
+  text-align: left;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+}
+.game-picker button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--green);
+}
+.game-picker button > span {
+  grid-row: span 2;
+  color: var(--muted);
+  font-size: 12px;
+}
+.game-picker strong {
+  font-size: 16px;
+}
+.game-picker small {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.games-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 22px;
+  align-items: start;
+}
+.games-layout .snake-card {
+  width: 100%;
+  max-width: none;
+}
+.games-layout .snake-arena {
+  grid-template-columns: minmax(0, 1fr) 190px;
+  gap: 18px;
+}
+.games-layout .snake-controls {
+  display: grid;
+  justify-items: center;
+}
+.games-layout .snake-stage {
+  width: min(100%, 440px);
+  justify-self: center;
+}
+.snake-grid i.tetris-active {
+  background: #ffce8a;
+  box-shadow: 0 0 8px #ffce8a44;
+}
+.game-settings output {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 7px;
+}
+.game-settings input[type="range"] {
+  padding-inline: 0;
+  width: 100%;
+  accent-color: var(--green);
+}
+.game-speed-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+}
+.game-settings > button {
+  width: 100%;
+  margin-top: 18px;
+}
+.game-rules {
+  margin-top: 24px;
+  border-top: 1px solid var(--border);
+  padding-top: 18px;
+}
+.game-rules p {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+  margin-top: 8px;
+}
+.hard-drop {
+  margin-top: 14px;
+  min-height: 44px;
+  width: 180px;
+  justify-content: center;
+}
+@media (max-width: 1100px) {
+  .games-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .game-settings {
+    max-width: 760px;
+    width: 100%;
+    margin: auto;
+  }
+  .games-layout .snake-arena {
+    grid-template-columns: minmax(0, 1fr) 210px;
+  }
+}
+@media (max-width: 800px) {
+  .games-layout .snake-arena {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .game-picker {
+    gap: 10px;
+  }
+  .game-picker button {
+    padding: 13px;
+    grid-template-columns: 1fr;
+  }
+  .game-picker button > span {
+    display: none;
+  }
+  .game-picker strong {
+    font-size: 14px;
+  }
+}

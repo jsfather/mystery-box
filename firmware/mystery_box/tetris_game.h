@@ -5,7 +5,7 @@
 class TetrisGame {
   uint16_t rows[8] = {}, fallMs = 900;
   uint8_t bag[7], bagAt = 7, type = 0, rotation = 0;
-  int8_t x = 4, y = -1;
+  int8_t x = 4, y = 0;
   uint32_t randomState = 1, fallenAt = 0, points = 0, clearedLines = 0;
   uint32_t random() { randomState ^= randomState << 13; randomState ^= randomState >> 17; randomState ^= randomState << 5; return randomState; }
   uint16_t shape(uint8_t turn) const {
@@ -40,7 +40,7 @@ class TetrisGame {
       for (uint8_t i = 6; i > 0; --i) { const uint8_t at = random() % (i + 1); const uint8_t old = bag[i]; bag[i] = bag[at]; bag[at] = old; }
       bagAt = 0;
     }
-    type = bag[bagAt++]; rotation = 0; x = 4; y = -1;
+    type = bag[bagAt++]; rotation = 0; x = 4; y = 0;
     if (!fits(x, y, rotation)) status = Over;
   }
   void lock() {

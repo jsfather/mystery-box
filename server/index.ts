@@ -142,6 +142,7 @@ client.on("message", (topic, payload, packet) => {
       ...device,
       ...t.data,
       scrollSpeed: t.data.scrollSpeed === true,
+      arcade: t.data.arcade === true,
       online: t.data.online,
       lastSeen: t.data.online ? Date.now() : device.lastSeen,
     };

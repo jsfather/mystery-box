@@ -47,7 +47,7 @@ test("controller leases enforce ownership, validate board state and expire safel
     head: 40,
     food: 12,
     direction: 1,
-    interval: 280,
+    interval: 350,
     matrix: "0".repeat(24),
   };
   assert.equal(game.receive({ ...state, id: "not-a-session" }, 2100), false);
@@ -92,31 +92,41 @@ test("controller leases enforce ownership, validate board state and expire safel
   );
 });
 
-test("firmware Snake handles turn queues, walls, pause, rollover, food, tail and a full-board win", () => {
-  const dir = mkdtempSync(join(tmpdir(), "mystery-snake-"));
+test("native arcade rules: first-input start, toroidal Snake, adjustable pace and Tetris gameplay", () => {
+  const dir = mkdtempSync(join(tmpdir(), "mystery-arcade-"));
   try {
     writeFileSync(
       join(dir, "test.cpp"),
-      `
-#include <cassert>
+      `#include <cassert>
+#include <cstring>
 #include "snake_game.h"
+#include "tetris_game.h"
 int main() {
   SnakeGame game; uint8_t pixels[8][12];
-  game.start(0xfffffff0UL, 7);
-  assert(!game.turn(3)); // Cannot reverse into the neck.
+  for (uint8_t heading = 0; heading < 4; ++heading) {
+    const uint32_t start = 0xfffffff0UL;
+    game.start(start, 7, 200); assert(game.status == SnakeGame::Ready);
+    assert(!game.tick(start + 10000)); game.pause(); game.resume(start + 10000);
+    assert(game.status == SnakeGame::Ready);
+    assert(game.turn(heading, start));
+    assert(!game.turn((heading + 2) % 4, start));
+    assert(!game.tick(start + 199));
+    int x = 4, y = 3;
+    const int moves = heading == 0 ? 4 : heading == 1 ? 8 : heading == 2 ? 5 : 5;
+    for (int step = 1; step <= moves; ++step) {
+      x = (x + (heading == 1 ? 1 : heading == 3 ? -1 : 0) + 12) % 12;
+      y = (y + (heading == 2 ? 1 : heading == 0 ? -1 : 0) + 8) % 8;
+      assert(game.tick(start + step * 200));
+      assert(game.status == SnakeGame::Playing); assert(game.head() == y * 12 + x);
+    }
+  }
+  game.start(0, 7, 200); assert(game.turn(1, 0));
   assert(game.turn(0)); assert(game.turn(3)); assert(!game.turn(2));
-  assert(!game.tick(100)); assert(game.tick(264)); assert(game.head() == 28);
-  assert(game.tick(544)); assert(game.head() == 27);
-  game.pause(); const auto head = game.head();
-  assert(!game.tick(100000)); assert(game.head() == head);
-  game.resume(100000); assert(!game.tick(100100)); assert(game.tick(100280));
-  game.start(0, 7);
-  for (int t = 1; t <= 8; ++t) game.tick(t * 280);
-  assert(game.status == SnakeGame::Over); assert(!game.tick(999999));
-  game.stop(); game.pixels(pixels);
-  for (auto& row : pixels) for (auto p : row) assert(!p);
-  // Follow a Hamiltonian cycle until every cell is filled. This also exercises
-  // food placement and moving into the vacated tail with no heap allocation.
+  assert(game.tick(200)); assert(game.head() == 28);
+  assert(game.tick(400)); assert(game.head() == 27);
+  game.pause(); const auto head = game.head(); assert(!game.tick(100000)); assert(game.head() == head);
+  game.configure(600, 100000); game.resume(100000);
+  assert(!game.tick(100599)); assert(game.tick(100600));
   uint8_t cycle[96]; int count = 0;
   for (int y = 0; y < 8; ++y) {
     if (y % 2 == 0) for (int x = 10; x >= 0; --x) cycle[count++] = y * 12 + x;
@@ -124,7 +134,7 @@ int main() {
   }
   for (int y = 7; y >= 0; --y) cycle[count++] = y * 12 + 11;
   assert(count == 96);
-  game.start(0, 42); uint32_t now = 0;
+  game.start(0, 42, 200); game.turn(1, 0); uint32_t now = 0;
   for (int move = 0; move < 10000 && game.status == SnakeGame::Playing; ++move) {
     int at = 0; while (cycle[at] != game.head()) ++at;
     const int next = cycle[(at + 1) % 96];
@@ -135,7 +145,50 @@ int main() {
     assert(lit == game.score() + 3 + (game.status == SnakeGame::Won ? 0 : 1));
   }
   assert(game.status == SnakeGame::Won); assert(game.score() == 93);
-}`,
+  game.start(0, 42, 200); game.turn(1, 0); now = 0;
+  for (int move = 0; move < 1000 && game.score() < 2; ++move) {
+    int at = 0; while (cycle[at] != game.head()) ++at;
+    const int next = cycle[(at+1)%96], dx = next%12-game.head()%12, dy=next/12-game.head()/12;
+    game.turn(dx==1?1:dx==-1?3:dy==1?2:0); now += 200; game.tick(now);
+  }
+  assert(game.score() >= 2);
+  for (int step = 0; step < 4 && game.status == SnakeGame::Playing; ++step) {
+    game.turn((game.direction()+1)%4); now += 200; game.tick(now);
+  }
+  assert(game.status == SnakeGame::Over);
+  game.stop(); game.pixels(pixels); for (auto& row : pixels) for (auto p : row) assert(!p);
+
+  TetrisGame blocks;
+  blocks.start(0xfffffff0UL, 42); assert(blocks.status == TetrisGame::Ready);
+  assert(!blocks.tick(100000)); blocks.control(1, 0xfffffff0UL);
+  assert(!blocks.tick(883)); assert(blocks.tick(884));
+  blocks.configure(300, 884); assert(!blocks.tick(1183)); assert(blocks.tick(1184));
+  blocks.pause(); const auto revision = blocks.revision; assert(!blocks.tick(100000)); assert(blocks.revision == revision);
+  blocks.resume(100000); assert(!blocks.tick(100299)); assert(blocks.tick(100300));
+  uint16_t rows[8] = {1,2,4,8,16,32,0xfff,0xfff};
+  assert(TetrisGame::clearRows(rows) == 2);
+  const uint16_t expected[8] = {0,0,1,2,4,8,16,32}; assert(!memcmp(rows, expected, sizeof(rows)));
+  blocks.start(0, 42); uint8_t seen = 0;
+  for (uint8_t piece = 0; piece < 7; ++piece) {
+    assert(blocks.status != TetrisGame::Over); seen |= 1U << blocks.piece();
+    // Move to the left edge, then spread pieces over three lanes.
+    for (int move = 0; move < 16; ++move) blocks.control(3, piece * 100);
+    for (int move = 0; move < (piece % 3) * 4; ++move) blocks.control(1, piece * 100);
+    assert(blocks.drop(piece * 100));
+  }
+  assert(seen == 127); assert(blocks.score() > 0);
+  blocks.start(0, 9);
+  for (int move = 0; move < 16; ++move) blocks.control(3, 0);
+  blocks.control(0, 0); blocks.control(0, 0); blocks.control(0, 0);
+  struct { uint8_t pixels[8][12]; uint32_t guard; } view; view.guard = 0x12345678;
+  blocks.pixels(view.pixels); assert(view.guard == 0x12345678);
+  for (auto& row : view.pixels) for (auto pixel : row) assert(pixel <= 1);
+  blocks.start(0, 42);
+  for (int piece = 0; piece < 100 && blocks.status != TetrisGame::Over; ++piece) blocks.drop(piece * 100);
+  assert(blocks.status == TetrisGame::Over); assert(!blocks.tick(999999));
+  blocks.stop(); blocks.pixels(pixels); for (auto& row : pixels) for (auto p : row) assert(!p);
+}
+`,
     );
     execFileSync("c++", [
       "-std=c++11",
@@ -243,4 +296,93 @@ test("game API requires a session, checks origin, validates controls and prevent
     store.close();
     rmSync(path, { recursive: true, force: true });
   }
+});
+
+test("each game keeps its pace and controller commands preserve game identity", async () => {
+  const { gameDefaults, gameSettingsSchema } = await import("../shared/games.js");
+  const { settingsSchema, defaults } = await import("../shared/model.js");
+  const legacy: any = structuredClone(defaults);
+  delete legacy.games;
+  assert.deepEqual(settingsSchema.parse(legacy).games, gameDefaults);
+  const settings = structuredClone(gameDefaults),
+    commands: any[] = [];
+  const controller = new SnakeController(
+    (command) => {
+      commands.push(command);
+      return true;
+    },
+    () => true,
+    () => true,
+    () => settings,
+  );
+  const user = { id: "one", name: "Player" };
+  const started = controller.request(
+    { action: "start", game: "tetris", direction: "left" },
+    user,
+    1000,
+  );
+  assert.equal(commands[0].kind, "tetris");
+  assert.equal(commands[0].direction, 3);
+  assert.equal(commands[0].interval, 900);
+  const state = {
+    v: 1,
+    kind: "tetris",
+    id: started.game!.id,
+    revision: 1,
+    status: "ready",
+    score: 0,
+    interval: 900,
+    matrix: "0".repeat(24),
+    active: "0".repeat(24),
+    lines: 0,
+  };
+  assert.equal(controller.receive({ ...state, kind: "snake" }, 1100), false);
+  assert.equal(controller.receive(state, 1100), true);
+  controller.request({ action: "drop", token: started.token! }, user, 1200);
+  assert.equal(commands.at(-1).action, "drop");
+  settings.tetris.fallMs = 500;
+  controller.configure();
+  assert.equal(commands.at(-1).action, "configure");
+  assert.equal(commands.at(-1).interval, 500);
+  assert.equal(settings.snake.moveMs, 350);
+  controller.tick(2200);
+  assert.equal(commands.at(-1).action, "configure");
+  assert.equal(
+    controller.receive({ ...state, interval: 500, revision: 2, status: "playing" }, 2300),
+    true,
+  );
+  controller.tick(3200);
+  assert.equal(commands.at(-1).action, "keepalive");
+  controller.request({ action: "stop", token: started.token! }, user, 3300);
+  const snake = controller.request({ action: "start", game: "snake" }, user, 3400);
+  assert.equal(commands.at(-1).interval, 350);
+  assert.equal(commands.at(-1).direction, undefined);
+  assert.throws(
+    () => controller.request({ action: "drop", token: snake.token! }, user, 3500),
+    (error: any) => error.status === 400,
+  );
+  assert.equal(
+    gameSettingsSchema.safeParse({ ...settings, snake: { moveMs: 50 } }).success,
+    false,
+  );
+  assert.equal(
+    gameSettingsSchema.safeParse({ ...settings, tetris: { fallMs: 350 } }).success,
+    false,
+  );
+  assert.equal(
+    controller.receive(
+      {
+        ...state,
+        id: snake.game!.id,
+        kind: "snake",
+        head: 40,
+        food: 12,
+        interval: 350,
+        status: "idle",
+      },
+      3600,
+    ),
+    true,
+  );
+  assert.equal(controller.snapshot(), null);
 });

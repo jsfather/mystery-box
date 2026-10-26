@@ -198,7 +198,7 @@ void publishGame(uint32_t now) {
   doc["kind"] = tetrisMode ? "tetris" : "snake";
   doc["status"] = gameLabel(); doc["score"] = tetrisMode ? tetris.score() : snake.score();
   doc["lines"] = tetrisMode ? tetris.lines() : 0;
-  doc["head"] = snake.head(); doc["food"] = snake.apple(); doc["direction"] = snake.direction();
+  doc["head"] = tetrisMode ? 0 : snake.head(); doc["food"] = tetrisMode ? 0 : snake.apple(); doc["direction"] = tetrisMode ? 0 : snake.direction();
   doc["interval"] = gameInterval(); doc["matrix"] = hex;
   char active[25];
   if (tetrisMode) {
