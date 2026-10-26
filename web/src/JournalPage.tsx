@@ -493,9 +493,9 @@ export function ActivityPage({
       <details className="error-guide" open>
         <summary>Error code guide</summary>
         <p className="input-note">
-          The LED matrix scrolls the lowest active code and resumes your animation when
-          all errors clear. Disconnected errors are reported here after reconnection; the
-          journal may miss events during power loss.
+          The LED matrix shows the lowest active code as a fixed E1–E8 display and resumes
+          your animation when all errors clear. Disconnected errors are reported here
+          after reconnection; the journal may miss events during power loss.
         </p>
         <dl className="error-codes">
           {deviceErrors.map((entry, bit) => (

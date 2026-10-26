@@ -143,7 +143,7 @@ Version 1.1 adds the shared love clock, equal-owner accounts, permanent note his
 
 ### LCD scrolling and error codes
 
-Firmware 1.5.0 scrolls long LCD messages on the Arduino, so Wi-Fi packet timing no longer controls each character. Startup progress appears on the LCD. When disconnected, the LCD shows a sleeping character and connection status; the LED matrix takes priority to scroll an error code, then restores your chosen animation after recovery.
+Firmware 1.5.0 scrolls long LCD messages on the Arduino, so Wi-Fi packet timing no longer controls each character. Startup progress appears on the LCD. When disconnected, the LCD shows a sleeping character and connection status; the LED matrix takes priority to show a fixed error code, then restores your chosen animation after recovery.
 
 Open **Our journal → Error code guide** for E1–E8 meanings and remedies, plus reported error/recovery history. Upload the updated sketch and **manually redeploy both the app and broker** together (the broker payload limit is now 1280 bytes). See [local scrolling and diagnostics](docs/architecture.md#local-lcd-scrolling-and-diagnostics-firmware-140) for protocol and offline logging details.
 
@@ -164,3 +164,5 @@ Open **Preferences → Flash both displays for new messages** to enable a strong
 On **Messages**, use **Select** and the message checkboxes to delete up to 100 notes at once, or choose **Delete message…** in a note’s three-dot menu. The confirmation gives the exact count. Deletion permanently removes the notes for both accounts and stops any remaining LCD display. **Stop LCD display** only cancels display and keeps the note in the conversation. The menu supports arrow keys, Home/End, Escape, outside-click dismissal and scrolling; its placement stays within the screen.
 
 Upload firmware 1.6.0 and manually redeploy the app to enable these changes. Broker permissions are unchanged from the Snake update; if that update has not been deployed yet, deploy both services together.
+
+Firmware 1.6.1 shows stationary **E1–E8** codes on the matrix using two compact glyphs. The code stays visible until recovery; multiple faults show the lowest active code.

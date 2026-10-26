@@ -40,7 +40,7 @@ test("Arduino scrolling ignores packet jitter, handles rollover and expires its 
 #include <cassert>
 #include <cstring>
 #include "lcd_scroll.h"
-#include "matrix_program.h"
+#include "error_display.h"
 uint32_t fakeNow = 0;
 uint32_t millis() { return fakeNow; }
 class FakeTransport {
@@ -73,14 +73,25 @@ int main() {
   assert(!transport.connected()); assert(transport.checks == 2);
   transport.socketAlive = true; assert(transport.connected());
   transport.stop(); assert(!transport.connected());
-  // Error sequences fit the dedicated buffer (with a guard against overflow).
-  struct { uint32_t frames[42][4]; uint32_t guard; } out;
+  // All fixed error codes fit the matrix, retain the E prefix, and differ.
+  struct { uint8_t pixels[8][12]; uint32_t guard; } out;
+  uint8_t previous[8][12] = {};
   out.guard = 0x12345678;
-  for (char code = '1'; code <= '8'; ++code) {
-    char text[] = {'E', code, 0};
-    assert(MatrixProgram::build("text", 7, text, nullptr, 0, out.frames) == 42);
+  const uint8_t prefix[] = {31,16,16,30,16,16,31};
+  for (uint8_t code = 1; code <= 8; ++code) {
+    ErrorDisplay::draw(code, out.pixels);
     assert(out.guard == 0x12345678);
+    if (code > 1) assert(memcmp(previous, out.pixels, 96) != 0);
+    memcpy(previous, out.pixels, 96);
+    for (int y = 0; y < 8; ++y) for (int x = 0; x < 12; ++x) {
+      assert(out.pixels[y][x] <= 1);
+      if (y == 7 || x == 5 || x == 6) assert(out.pixels[y][x] == 0);
+      else if (x < 5) assert(out.pixels[y][x] == ((prefix[y] >> (4-x)) & 1));
+    }
   }
+  ErrorDisplay::draw(0, out.pixels);
+  for (auto& row : out.pixels) for (auto pixel : row) assert(pixel == 0);
+
 }`,
     );
     execFileSync("c++", [

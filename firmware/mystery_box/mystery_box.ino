@@ -20,6 +20,7 @@
 #include "snake_game.h"
 #include "polled_transport.h"
 #include "message_alert.h"
+#include "error_display.h"
 
 #if MQTT_TLS
 PolledTransport<WiFiSSLClient> transport;
@@ -60,7 +61,7 @@ uint8_t pixels[8][12] = {{0}};
 LcdScroll scroll;
 uint8_t errors = 0, occurred = 0, shownError = 0, reportedErrors = 0;
 uint16_t programFrames = 0;
-uint32_t errorFrames[42][4]; // Two-character scrolling codes, independent of user animation.
+uint8_t errorPixels[8][12]; // Stationary E1–E8; user animation stays preserved.
 bool mqttReady = false, brokerConnected = false, statusLight = false;
 uint32_t waitingSince = 0;
 SnakeGame snake;
@@ -198,10 +199,8 @@ void drawError() {
   noInterrupts(); matrix.autoscroll(0); interrupts();
   shownError = code;
   if (code) {
-    char label[] = {'E', char('0' + code), 0};
-    const uint16_t count = MatrixProgram::build("text", 7, label, nullptr, 0, errorFrames);
-    matrix.loadWrapper(errorFrames, count * sizeof(errorFrames[0]));
-    matrix.play(true);
+    ErrorDisplay::draw(code, errorPixels);
+    matrix.renderBitmap(errorPixels, 8, 12);
   } else if (snake.status != SnakeGame::Idle) {
     gameDrawing = false;
   } else restoreMatrix();
@@ -431,7 +430,7 @@ void telemetry() {
   doc["online"] = true;
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
-  doc["firmware"] = "1.6.0";
+  doc["firmware"] = "1.6.1";
   doc["lcdScroll"] = true; doc["snake"] = true;
   doc["errors"] = errors;
   doc["occurred"] = occurred;
@@ -566,7 +565,7 @@ void bootStep(const char* step) {
 
 void setup() {
   Serial.begin(115200);  // Never wait for USB Serial: run unattended.
-  Serial.println("Mystery Box firmware 1.6.0");
+  Serial.println("Mystery Box firmware 1.6.1");
   matrix.begin();
   matrix.clear();
   Wire.begin();
