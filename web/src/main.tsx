@@ -53,7 +53,7 @@ import "./theme.css";
 import { TimezoneSelect } from "./TimezoneSelect";
 import { HeaderConnection, AppearanceButton } from "./HeaderControls";
 import { Preferences, ThemeControl } from "./Preferences";
-import { SnakePage } from "./SnakePage";
+import { GamesPage } from "./GamesPage";
 import { useLiveSnapshot } from "./useLiveSnapshot";
 import { matrixCatalog, matrixFrame, matrixProgram } from "../../shared/matrix";
 type Page =
@@ -61,7 +61,7 @@ type Page =
   | "clock"
   | "messages"
   | "matrix"
-  | "snake"
+  | "games"
   | "device"
   | "love"
   | "people"
@@ -78,7 +78,7 @@ const pageInfo: Record<Page, [string, string]> = {
   activity: ["Our journal", "The little things we’ve changed, sent and shared."],
   clock: ["Time & display", "Your time, your calendar, your corner of the world."],
   messages: ["Messages", "Send a little something to the real world."],
-  snake: ["Play Snake", "A tiny arcade, right on your desk."],
+  games: ["Games", "A tiny arcade, right on your desk."],
   matrix: ["LED studio", "Twelve by eight pixels. Make every one count."],
   device: ["Connection", "Everything between your server and your desk."],
 };
@@ -306,7 +306,7 @@ function App() {
               ["clock", Clock3, "Time & display"],
               ["messages", MessageSquare, "Messages"],
               ["matrix", Grid3X3, "LED studio"],
-              ["snake", Gamepad2, "Play Snake"],
+              ["games", Gamepad2, "Games"],
               ["device", Radio, "Connection"],
               ["people", UsersRound, "You & me"],
               ["activity", NotebookPen, "Our journal"],
@@ -358,8 +358,8 @@ function App() {
           className={
             page === "messages"
               ? "messages-page"
-              : page === "snake"
-                ? "snake-page"
+              : page === "games"
+                ? "games-page"
                 : undefined
           }
         >
@@ -638,7 +638,7 @@ function App() {
               {page === "preferences" && (
                 <Preferences snapshot={s} save={save} notice={notice} />
               )}
-              {page === "snake" && me && <SnakePage snapshot={s} me={me} live={live} />}
+              {page === "games" && me && <GamesPage snapshot={s} me={me} live={live} save={save} />}
               {page === "matrix" && (
                 <MatrixStudio
                   settings={s.settings}

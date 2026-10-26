@@ -18,6 +18,7 @@
 #include "matrix_program.h"
 #include "lcd_scroll.h"
 #include "snake_game.h"
+#include "tetris_game.h"
 #include "polled_transport.h"
 #include "message_alert.h"
 #include "error_display.h"
@@ -65,6 +66,17 @@ uint8_t errorPixels[8][12]; // Stationary E1–E8; user animation stays preserve
 bool mqttReady = false, brokerConnected = false, statusLight = false;
 uint32_t waitingSince = 0;
 SnakeGame snake;
+TetrisGame tetris;
+bool tetrisMode = false;
+bool gameIdle() { return tetrisMode ? tetris.status == TetrisGame::Idle : snake.status == SnakeGame::Idle; }
+uint32_t gameRevision() { return tetrisMode ? tetris.revision : snake.revision; }
+const char* gameLabel() { return tetrisMode ? tetris.label() : snake.label(); }
+uint16_t gameInterval() { return tetrisMode ? tetris.interval() : snake.interval(); }
+void gameBitmap(uint8_t out[8][12]) { if (tetrisMode) tetris.pixels(out); else snake.pixels(out); }
+void pauseGame() { if (tetrisMode) tetris.pause(); else snake.pause(); }
+void configureGame(uint16_t interval, uint32_t now) { if (tetrisMode) tetris.configure(interval, now); else snake.configure(interval, now); }
+void controlGame(uint8_t direction, uint32_t now) { if (tetrisMode) tetris.control(direction, now); else snake.turn(direction, now); }
+
 MessageAlert attention;
 int8_t alertPhase = -1;
 char gameId[37] = "";
@@ -85,7 +97,7 @@ void restoreMatrix() {
 }
 
 void stopGame() {
-  snake.stop(); gameDirty = true; gameDrawing = false;
+  snake.stop(); tetris.stop(); gameDirty = true; gameDrawing = false;
   if (!shownError) restoreMatrix();
 }
 
@@ -96,7 +108,7 @@ void serviceAlert(uint32_t now) {
       alertPhase = -1;
       if (lcdReady) { if (lightOn || !brokerConnected) lcd.backlight(); else lcd.noBacklight(); }
       if (!shownError) {
-        if (snake.status != SnakeGame::Idle) gameDrawing = false;
+        if (!gameIdle()) gameDrawing = false;
         else restoreMatrix();
       }
     }
@@ -111,17 +123,17 @@ void serviceAlert(uint32_t now) {
 }
 
 void serviceGame(uint32_t now) {
-  if (snake.status == SnakeGame::Idle) return;
+  if (gameIdle()) return;
   if (uint32_t(now - lastGameCommand) > 8000UL) { stopGame(); return; }
   if (attention.active || errors || !brokerConnected || uint32_t(now - lastGameCommand) > 3500UL) {
-    const uint32_t before = snake.revision;
-    snake.pause();
-    if (snake.revision != before) gameDirty = true;
+    const uint32_t before = gameRevision();
+    pauseGame();
+    if (gameRevision() != before) gameDirty = true;
   }
-  if (snake.tick(now)) gameDirty = true;
+  if (tetrisMode ? tetris.tick(now) : snake.tick(now)) gameDirty = true;
   if (!shownError && !attention.active && (gameDirty || !gameDrawing)) {
     if (!gameDrawing) { noInterrupts(); matrix.autoscroll(0); interrupts(); }
-    snake.pixels(gamePixels); matrix.renderBitmap(gamePixels, 8, 12); gameDrawing = true;
+    gameBitmap(gamePixels); matrix.renderBitmap(gamePixels, 8, 12); gameDrawing = true;
   }
 }
 
@@ -135,23 +147,34 @@ void receivedGame(byte* payload, unsigned int length) {
     if (i == 8 || i == 13 || i == 18 || i == 23) { if (id[i] != '-') return; }
     else if (!((id[i] >= '0' && id[i] <= '9') || (id[i] >= 'a' && id[i] <= 'f'))) return;
   }
+  const char* kind = doc["kind"] | "snake";
+  if (strcmp(kind, "snake") && strcmp(kind, "tetris")) return;
+  const uint16_t interval = doc["interval"] | uint16_t(!strcmp(kind, "tetris") ? 900 : 350);
+  if (!doc["interval"].isNull() && !doc["interval"].is<uint16_t>()) return;
+  if (!strcmp(kind, "tetris") ? (interval < 300 || interval > 1500 || interval % 100) : (interval < 200 || interval > 800 || interval % 50)) return;
+  if (!doc["direction"].isNull() && (!doc["direction"].is<uint8_t>() || doc["direction"].as<uint8_t>() > 3)) return;
   const uint32_t seq = doc["seq"].as<uint32_t>(), now = millis();
   if (!strcmp(action, "start")) {
     if (errors || attention.active) return;
     if (!strcmp(id, gameId)) {
       // Start retransmission confirms the same game without resetting it.
-      if (seq > gameSeq && snake.status != SnakeGame::Idle) { gameSeq = seq; lastGameCommand = now; gameDirty = true; }
+      if (seq > gameSeq && !gameIdle()) { gameSeq = seq; lastGameCommand = now; if (gameInterval() != interval) configureGame(interval, now); gameDirty = true; }
       return;
     }
     strncpy(gameId, id, 37); gameSeq = seq; lastGameCommand = now;
-    snake.start(now, now ^ micros()); gameDirty = true; gameDrawing = false; return;
+    snake.stop(); tetris.stop(); tetrisMode = !strcmp(kind, "tetris");
+    if (tetrisMode) tetris.start(now, now ^ micros(), interval); else snake.start(now, now ^ micros(), interval);
+    if (!doc["direction"].isNull()) controlGame(doc["direction"].as<uint8_t>(), now);
+    gameDirty = true; gameDrawing = false; return;
   }
-  if (strcmp(id, gameId) || seq <= gameSeq || snake.status == SnakeGame::Idle) return;
+  if (strcmp(id, gameId) || strcmp(kind, tetrisMode ? "tetris" : "snake") || seq <= gameSeq || gameIdle()) return;
   if (!strcmp(action, "turn")) {
     if (!doc["direction"].is<uint8_t>() || doc["direction"].as<uint8_t>() > 3) return;
-    snake.turn(doc["direction"].as<uint8_t>());
-  } else if (!strcmp(action, "pause")) snake.pause();
-  else if (!strcmp(action, "resume")) { if (!errors && !attention.active) snake.resume(now); }
+    if (!errors && !attention.active) controlGame(doc["direction"].as<uint8_t>(), now);
+  } else if (!strcmp(action, "pause")) pauseGame();
+  else if (!strcmp(action, "resume")) { if (!errors && !attention.active) { if (tetrisMode) tetris.resume(now); else snake.resume(now); } }
+  else if (!strcmp(action, "drop")) { if (tetrisMode && !errors && !attention.active) tetris.drop(now); }
+  else if (!strcmp(action, "configure")) configureGame(interval, now);
   else if (!strcmp(action, "stop")) stopGame();
   else if (strcmp(action, "keepalive")) return;
   gameSeq = seq; lastGameCommand = now; gameDirty = true;
@@ -161,7 +184,7 @@ void publishGame(uint32_t now) {
   if (!gameId[0] || (!gameDirty && now - lastGamePublish < 1000UL)) return;
   // Coalesce control bursts; keep the serial Wi-Fi bridge free for steering.
   if (now - lastGamePublish < 80UL) return;
-  snake.pixels(gamePixels);
+  gameBitmap(gamePixels);
   char hex[25];
   const char digits[] = "0123456789abcdef";
   for (uint8_t i = 0; i < 24; ++i) {
@@ -171,14 +194,25 @@ void publishGame(uint32_t now) {
   }
   hex[24] = 0;
   JsonDocument doc;
-  doc["v"] = 1; doc["id"] = gameId; doc["revision"] = snake.revision;
-  doc["status"] = snake.label(); doc["score"] = snake.score();
+  doc["v"] = 1; doc["id"] = gameId; doc["revision"] = gameRevision();
+  doc["kind"] = tetrisMode ? "tetris" : "snake";
+  doc["status"] = gameLabel(); doc["score"] = tetrisMode ? tetris.score() : snake.score();
+  doc["lines"] = tetrisMode ? tetris.lines() : 0;
   doc["head"] = snake.head(); doc["food"] = snake.apple(); doc["direction"] = snake.direction();
-  doc["interval"] = snake.interval(); doc["matrix"] = hex;
-  char buffer[300]; serializeJson(doc, buffer, sizeof(buffer));
+  doc["interval"] = gameInterval(); doc["matrix"] = hex;
+  char active[25];
+  if (tetrisMode) {
+    tetris.activePixels(gamePixels);
+    for (uint8_t i = 0; i < 24; ++i) {
+      uint8_t value = 0; for (uint8_t bit = 0; bit < 4; ++bit) { const uint8_t at = i * 4 + bit; value = (value << 1) | gamePixels[at / 12][at % 12]; }
+      active[i] = digits[value];
+    }
+    active[24] = 0; doc["active"] = active;
+  }
+  char buffer[384]; serializeJson(doc, buffer, sizeof(buffer));
   if (mqtt.publish(GAME_STATE_TOPIC, buffer, false)) gameDirty = false;
   lastGamePublish = now;
-  if (snake.status == SnakeGame::Idle) gameId[0] = 0;
+  if (gameIdle()) gameId[0] = 0;
 }
 
 
@@ -201,7 +235,7 @@ void drawError() {
   if (code) {
     ErrorDisplay::draw(code, errorPixels);
     matrix.renderBitmap(errorPixels, 8, 12);
-  } else if (snake.status != SnakeGame::Idle) {
+  } else if (!gameIdle()) {
     gameDrawing = false;
   } else restoreMatrix();
 }
@@ -286,12 +320,12 @@ void receivedMatrix(byte* payload, unsigned int length) {
   // Stop only while replacing the sequence. Steady playback thereafter is
   // handled entirely by the matrix hardware timer, including during reconnects.
   noInterrupts();
-  if (!shownError && !attention.active && snake.status == SnakeGame::Idle) matrix.autoscroll(0);
+  if (!shownError && !attention.active && gameIdle()) matrix.autoscroll(0);
   interrupts();
   const uint16_t frames=MatrixProgram::build(mode,speed,text,custom,count,matrixFrames);
   noInterrupts();
   programFrames = frames;
-  if (!shownError && !attention.active && snake.status == SnakeGame::Idle) {
+  if (!shownError && !attention.active && gameIdle()) {
     matrix.loadWrapper(matrixFrames,frames*sizeof(matrixFrames[0]));
     matrix.play(true);
   }
@@ -380,14 +414,14 @@ void received(char* topic, byte* payload, unsigned int length) {
     // The LED library advances sequences in its hardware timer ISR. Stop it
     // while replacing the persistent frame buffer, then play independently of Wi-Fi.
     noInterrupts();
-    if (!shownError && !attention.active && snake.status == SnakeGame::Idle) matrix.autoscroll(0);
+    if (!shownError && !attention.active && gameIdle()) matrix.autoscroll(0);
     interrupts();
     Heartbeat::sequence(heartFrames, heartSpeed);
     noInterrupts();
-    if (!shownError && !attention.active && snake.status == SnakeGame::Idle) { matrix.loadSequence(heartFrames); matrix.play(true); }
+    if (!shownError && !attention.active && gameIdle()) { matrix.loadSequence(heartFrames); matrix.play(true); }
     interrupts();
     playingHeartSpeed = heartSpeed;
-  } else if (!shownError && !attention.active && snake.status == SnakeGame::Idle && !matrixProgramReady && !localHeart && wasHeart) {
+  } else if (!shownError && !attention.active && gameIdle() && !matrixProgramReady && !localHeart && wasHeart) {
     noInterrupts();
     matrix.autoscroll(0);
     interrupts();
@@ -411,7 +445,7 @@ void received(char* topic, byte* payload, unsigned int length) {
     if (!clockTop) row(0, a);
     if (!scroll.active) row(1, b);
   }
-  if (!shownError && !attention.active && snake.status == SnakeGame::Idle && !matrixProgramReady && !localHeart) {
+  if (!shownError && !attention.active && gameIdle() && !matrixProgramReady && !localHeart) {
     for (uint8_t i = 0; i < 96; i++) {
       pixels[i / 12][i % 12] = (hexValue(hex[i / 4]) >> (3 - i % 4)) & 1;
     }
@@ -431,8 +465,8 @@ void telemetry() {
   doc["online"] = true;
   doc["rssi"] = WiFi.RSSI();
   doc["ip"] = WiFi.localIP().toString();
-  doc["firmware"] = "1.7.0";
-  doc["lcdScroll"] = true; doc["scrollSpeed"] = true; doc["snake"] = true;
+  doc["firmware"] = "1.8.0";
+  doc["lcdScroll"] = true; doc["scrollSpeed"] = true; doc["snake"] = true; doc["arcade"] = true;
   doc["errors"] = errors;
   doc["occurred"] = occurred;
   doc["matrixRevision"] = matrixRevision;
@@ -566,7 +600,7 @@ void bootStep(const char* step) {
 
 void setup() {
   Serial.begin(115200);  // Never wait for USB Serial: run unattended.
-  Serial.println("Mystery Box firmware 1.7.0");
+  Serial.println("Mystery Box firmware 1.8.0");
   matrix.begin();
   matrix.clear();
   Wire.begin();

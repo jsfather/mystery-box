@@ -152,14 +152,14 @@
 }
 
 @media (max-width: 800px) {
-  .snake-page .page-heading {
+  .games-page .page-heading {
     margin-bottom: 18px;
   }
-  .snake-page .page-heading .eyebrow,
-  .snake-page .page-heading p {
+  .games-page .page-heading .eyebrow,
+  .games-page .page-heading p {
     display: none;
   }
-  .snake-page .page-heading h1 {
+  .games-page .page-heading h1 {
     font-size: 24px;
     margin-bottom: 0;
   }

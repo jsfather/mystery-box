@@ -49,15 +49,17 @@ const game = new SnakeController(
   () =>
     broker &&
     device.online &&
-    device.snake === true &&
+    device.arcade === true &&
     Date.now() - (device.lastSeen ?? 0) < 45000,
   () => (device.errors ?? 0) === 0,
+  () => settings.games,
 );
 const telemetry = z.object({
   online: z.boolean(),
   lcdScroll: z.boolean().optional(),
   scrollSpeed: z.boolean().optional(),
   snake: z.boolean().optional(),
+  arcade: z.boolean().optional(),
   errors: z.number().int().min(0).max(255).optional(),
   occurred: z.number().int().min(0).max(255).optional(),
   rssi: z.number().min(-150).max(0).optional(),
@@ -258,6 +260,7 @@ const app = createApp(config, store, {
     const previousMatrix = JSON.stringify(settings.matrix);
     settings = store.settings();
     messages = store.messages();
+    game.configure();
     if (previousMatrix !== JSON.stringify(settings.matrix)) publishMatrix();
     publish(true);
     for (const fn of listeners) fn();

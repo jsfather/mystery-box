@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { gameSettingsSchema, gameDefaults } from "./games.js";
 import type { SnakeSnapshot } from "./snake.js";
 import { matrixModes } from "./matrix.js";
 export const printable = z
@@ -61,6 +62,7 @@ export const settingsSchema = z
       })
       .strict()
       .default({ everyMinutes: 10, durationSeconds: 30 }),
+    games: gameSettingsSchema,
     messaging: z
       .object({
         mode: z.enum(["full", "clock"]),
@@ -111,6 +113,7 @@ export const settingsSchema = z
   });
 export type Settings = z.infer<typeof settingsSchema>;
 export const defaults: Settings = {
+  games: gameDefaults,
   displayMode: "clock",
   schedule: { everyMinutes: 10, durationSeconds: 30 },
   messaging: { mode: "full", defaultDuration: 120, blink: false, scrollStepMs: 400 },
@@ -193,6 +196,7 @@ export interface Device {
   lcdScroll?: boolean;
   scrollSpeed?: boolean;
   snake?: boolean;
+  arcade?: boolean;
   errors?: number;
   occurred?: number;
   matrixRevision?: number;
